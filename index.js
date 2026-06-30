@@ -1,3 +1,26 @@
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const express = require('express');
+
+// Tenta carregar os comandos com segurança para evitar o crash instantâneo
+let lidarComComando;
+try {
+    lidarComComando = require('./comandos').lidarComComando;
+} catch (e) {
+    console.log('[AVISO] Arquivo comandos.js não foi encontrado ou possui erros. O bot vai rodar sem comandos por enquanto.');
+}
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.get('/', (req, res) => {
+    res.send('Bot ativo e operando 24/7!');
+});
+
+app.listen(port, () => {
+    console.log(`[SERVER] Monitoramento HTTP rodando na porta ${port}`);
+});
+
 async function iniciarBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
@@ -8,16 +31,14 @@ async function iniciarBot() {
         browser: ['Ubuntu', 'Chrome', '20.0.0']
     });
 
-    // Modificação aqui: Usando um controle para evitar disparos múltiplos
     let codigoGerado = false;
 
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
 
-        // Tenta gerar o código apenas se ainda não estiver registrado e a conexão inicial estabilizar
         if (!sock.authState.creds.registered && !codigoGerado) {
-            codigoGerado = true; // Bloqueia para não gerar duplicado no loop
-            const numeroBot = "258840504242"; // Certifique-se de que está correto!
+            codigoGerado = true;
+            const numeroBot = "258840504242"; // Certifique-se de mudar para o seu número com DDD!
             
             setTimeout(async () => {
                 try {
@@ -26,25 +47,21 @@ async function iniciarBot() {
                     console.log(`👉 SEU CÓDIGO DE PAREAMENTO: ${codigo}`);
                     console.log('======================================\n');
                 } catch (err) {
-                    console.error('Erro ao gerar código (tentando redefinir):', err);
-                    codigoGerado = false; // Permite tentar novamente se houver erro real
+                    console.error('Erro ao gerar código:', err);
+                    codigoGerado = false;
                 }
-            }, 5000); // 5 segundos de espera para estabilizar o WebSocket
+            }, 5000);
         }
 
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-            // Se o WhatsApp desconectar por falha de pareamento ou log out, evite loop infinito imediato
             const deveReconectar = statusCode !== DisconnectReason.loggedOut;
-            
-            console.log(`[AVISO] Conexão fechada (Status: ${statusCode}). Reconectando:`, deveReconectar);
-            
+            console.log(`[AVISO] Conexão fechada. Reconectando:`, deveReconectar);
             if (deveReconectar) {
-                // Aguarda 5 segundos antes de tentar ligar o bot de novo (evita sobrecarregar o Render)
-                setTimeout(() => iniciarBot(), 5000); 
+                setTimeout(() => iniciarBot(), 5000);
             }
         } else if (connection === 'open') {
-            console.log('🚀 [SUCESSO] Bot conectado com sucesso aos servidores do WhatsApp!');
+            console.log('🚀 [SUCESSO] Bot conectado com sucesso!');
         }
     });
 
@@ -53,9 +70,15 @@ async function iniciarBot() {
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
         for (const msg of m.messages) {
-            if (!msg.key.fromMe && msg.message) {
-                await lidarComComando(sock, msg);
+            if (!msg.key.fromMe && msg.message && lidarComComando) {
+                try {
+                    await lidarComComando(sock, msg);
+                } catch (err) {
+                    console.error('Erro ao processar comando:', err);
+                }
             }
         }
     });
 }
+
+iniciarBot().catch(err => console.error('[ERRO CRÍTICO]:', err));
