@@ -1,64 +1,54 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const express = require('express');
-const { lidarComComando } = require('./comandos');
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Configuração importante: COLOQUE SEU NÚMERO COM CÓDIGO DO PAÍS E DDD AQUI (Sem + ou -)
-// Exemplo para o Brasil (55) + DDD (11) + Número (999999999) = '5511999999999'
-const MEU_NUMERO_WHATSAPP = '258840504242'; 
-
-app.get('/', (req, res) => {
-    res.send('🤖 Bot de Código de Emparelhamento Ativo!');
-});
-
-app.listen(port, () => {
-    console.log(`[SERVER] Monitoramento HTTP ativo na porta ${port}`);
-});
-
 async function iniciarBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // Desativa o QR Code para podermos usar o código de texto
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        browser: ['Ubuntu', 'Chrome', '20.0.0'] // Necessário simular um navegador válido para o código funcionar
+        browser: ['Ubuntu', 'Chrome', '20.0.0']
+    });
+
+    // Modificação aqui: Usando um controle para evitar disparos múltiplos
+    let codigoGerado = false;
+
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
+
+        // Tenta gerar o código apenas se ainda não estiver registrado e a conexão inicial estabilizar
+        if (!sock.authState.creds.registered && !codigoGerado) {
+            codigoGerado = true; // Bloqueia para não gerar duplicado no loop
+            const numeroBot = "258840504242"; // Certifique-se de que está correto!
+            
+            setTimeout(async () => {
+                try {
+                    const codigo = await sock.requestPairingCode(numeroBot);
+                    console.log('\n======================================');
+                    console.log(`👉 SEU CÓDIGO DE PAREAMENTO: ${codigo}`);
+                    console.log('======================================\n');
+                } catch (err) {
+                    console.error('Erro ao gerar código (tentando redefinir):', err);
+                    codigoGerado = false; // Permite tentar novamente se houver erro real
+                }
+            }, 5000); // 5 segundos de espera para estabilizar o WebSocket
+        }
+
+        if (connection === 'close') {
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+            // Se o WhatsApp desconectar por falha de pareamento ou log out, evite loop infinito imediato
+            const deveReconectar = statusCode !== DisconnectReason.loggedOut;
+            
+            console.log(`[AVISO] Conexão fechada (Status: ${statusCode}). Reconectando:`, deveReconectar);
+            
+            if (deveReconectar) {
+                // Aguarda 5 segundos antes de tentar ligar o bot de novo (evita sobrecarregar o Render)
+                setTimeout(() => iniciarBot(), 5000); 
+            }
+        } else if (connection === 'open') {
+            console.log('🚀 [SUCESSO] Bot conectado com sucesso aos servidores do WhatsApp!');
+        }
     });
 
     sock.ev.on('creds.update', saveCreds);
-
-    // Solicita o código de pareamento caso o bot ainda não esteja conectado
-    if (!sock.authState.creds.registered) {
-        // Um pequeno delay garante que o socket está pronto para pedir o código
-        setTimeout(async () => {
-            try {
-                let codigo = await sock.requestPairingCode(MEU_NUMERO_WHATSAPP);
-                console.log('\n==================================================');
-                console.log(`🔑 SEU CÓDIGO DE EMPARELHAMENTO DO WHATSAPP: ${codigo}`);
-                console.log('==================================================\n');
-                console.log('Abra o WhatsApp do seu celular -> Configurações -> Aparelhos Conectados -> Conectar com número de telefone e digite o código acima.');
-            } catch (err) {
-                console.error('Falha ao gerar o código de pareamento:', err);
-            }
-        }, 3000);
-    }
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect } = update;
-
-        if (connection === 'close') {
-            const deveReconectar = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('[AVISO] Conexão fechada. Reconectando:', deveReconectar);
-            if (deveReconectar) {
-                iniciarBot();
-            }
-        } else if (connection === 'open') {
-            console.log('🚀 [CONECTADO] O Bot foi pareado via código com sucesso!');
-        }
-    });
 
     sock.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
@@ -69,5 +59,3 @@ async function iniciarBot() {
         }
     });
 }
-
-iniciarBot().catch(err => console.error('[ERRO CRÍTICO]:', err));
