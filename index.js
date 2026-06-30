@@ -8,7 +8,7 @@ const port = process.env.PORT || 3000;
 
 // Configuração importante: COLOQUE SEU NÚMERO COM CÓDIGO DO PAÍS E DDD AQUI (Sem + ou -)
 // Exemplo para o Brasil (55) + DDD (11) + Número (999999999) = '5511999999999'
-const MEU_NUMERO_WHATSAPP = '5511999999999'; 
+const MEU_NUMERO_WHATSAPP = '258840504242'; 
 
 app.get('/', (req, res) => {
     res.send('🤖 Bot de Código de Emparelhamento Ativo!');
