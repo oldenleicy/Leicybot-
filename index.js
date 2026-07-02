@@ -9,7 +9,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ⚠️ PREENCHA AQUI: 55 + DDD + Seu Número (Apenas números, como string)
-const MEU_NUMERO_WHATSAPP = '5511999999999'; 
+const MEU_NUMERO_WHATSAPP = '258840504242'; 
 
 let statusConexao = "Iniciando aplicação...";
 let botSocket = null;
