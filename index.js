@@ -1,7 +1,6 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
-const QRCode = require('qrcode'); // Certifique-se de ter essa dependência ou usaremos HTML simples
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -12,14 +11,16 @@ let statusConexao = "Iniciando o sistema...";
 // Página Web onde você verá o QR Code perfeitamente pelo celular
 app.get('/', (req, res) => {
     if (statusConexao === "conectado") {
-        res.send("<h1>🚀 Leicybot Conectado e Operando 24/7!</h1>");
+        res.send("<div style='text-align: center; font-family: sans-serif; margin-top: 50px;'><h1>🚀 Leicybot Conectado e Operando 24/7!</h1></div>");
     } else if (ultimoQrCode) {
-        // Renderiza o QR Code em uma página limpa e fácil de escanear
+        // Renderiza o QR Code usando uma API externa estável baseada no texto do QR
         res.send(`
             <div style="text-align: center; font-family: sans-serif; margin-top: 50px;">
                 <h2>📱 Escaneie o QR Code para conectar o Leicybot-</h2>
                 <p>Atualize a página se o código expirar.</p>
-                <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(ultimoQrCode)}" alt="QR Code" style="border: 10px solid white; box-shadow: 0px 0px 15px rgba(0,0,0,0.2);"/>
+                <div style="margin: 20px auto; display: inline-block;">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(ultimoQrCode)}" alt="QR Code" style="border: 10px solid white; box-shadow: 0px 0px 15px rgba(0,0,0,0.2);"/>
+                </div>
                 <br/><br/>
                 <p>Status atual: <strong>${statusConexao}</strong></p>
             </div>
@@ -38,7 +39,7 @@ async function iniciarBot() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false, // Não vamos usar o terminal quebrado do Render
+        printQRInTerminal: false, // Evita quebrar o terminal do Render
         logger: pino({ level: 'silent' }),
         browser: ['Leicybot', 'Chrome', '1.0.0']
     });
@@ -46,7 +47,7 @@ async function iniciarBot() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Captura o QR code gerado para exibir na página web
+        // Captura o QR code bruto gerado para a nossa página web
         if (qr) {
             ultimoQrCode = qr;
             statusConexao = "QR Code pronto para escaneamento";
@@ -61,7 +62,7 @@ async function iniciarBot() {
 
             console.log(`[AVISO] Conexão fechada. Reconectando: ${deveReconectar}`);
             if (deveReconectar) {
-                setTimeout(() => iniciarBot(), 10000); // Tenta de novo em 10 segundos
+                setTimeout(() => iniciarBot(), 10000);
             }
         } else if (connection === 'open') {
             ultimoQrCode = null;
