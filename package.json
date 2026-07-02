@@ -1,15 +1,14 @@
 {
-  "name": "bot-whatsapp-baileys",
-  "version": "1.0.0",
-  "description": "Bot do WhatsApp leve para o Render",
+  "name": "bot-leicybot-resiliente",
+  "version": "1.1.0",
+  "description": "Bot estável sem erro 428",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.6.0",
+    "@whiskeysockets/baileys": "^6.7.3",
     "express": "^4.19.2",
-    "pino": "^9.1.0",
-    "qrcode-terminal": "^0.12.0"
+    "pino": "^9.1.0"
   }
 }
