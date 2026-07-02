@@ -9,6 +9,7 @@ const port = process.env.PORT || 3000;
 
 let ultimoQrCode = null;
 let statusConexao = "Iniciando o sistema...";
+let botSocket = null; // Armazena a conexão atual para podermos fechá-la se der erro
 
 app.get('/', (req, res) => {
     if (statusConexao === "conectado") {
@@ -38,10 +39,15 @@ function forcarLimpezaGeral() {
     const pastaAuth = path.join(__dirname, 'auth_info');
     if (fs.existsSync(pastaAuth)) {
         try {
+            // Força o encerramento do socket antigo para liberar os arquivos trancados
+            if (botSocket) {
+                botSocket.end();
+                botSocket = null;
+            }
             fs.rmSync(pastaAuth, { recursive: true, force: true });
-            console.log('[FAXINA] Pasta auth_info completamente removida para resetar o Erro 405.');
+            console.log('[FAXINA] Pasta auth_info completamente removida com sucesso!');
         } catch (err) {
-            console.error('Erro ao deletar pasta auth_info:', err);
+            console.error('[ERRO] Falha ao deletar pasta auth_info:', err.message);
         }
     }
 }
@@ -49,20 +55,21 @@ function forcarLimpezaGeral() {
 async function iniciarBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
 
-    const sock = makeWASocket({
+    // CONFIGURAÇÃO REFORÇADA: Simula perfeitamente um Mac executando o Chrome oficial
+    botSocket = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
+        printQRInTerminal: true, // Deixei como true para também gerar no log do Render se precisar
         logger: pino({ level: 'silent' }),
-        browser: ['Leicybot', 'Chrome', '1.0.0']
+        browser: ['Mac OS', 'Chrome', '124.0.0.0'] 
     });
 
-    sock.ev.on('connection.update', (update) => {
+    botSocket.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
             ultimoQrCode = qr;
             statusConexao = "QR Code pronto para escaneamento";
-            console.log("[SISTEMA] Novo QR Code disponível na página Web!");
+            console.log("[SISTEMA] Novo QR Code disponível!");
         }
 
         if (connection === 'close') {
@@ -71,23 +78,23 @@ async function iniciarBot() {
             statusConexao = `Desconectado (Erro: ${statusCode})`;
             console.log(`[AVISO] Conexão fechada. Status: ${statusCode}`);
 
-            // Se o erro for 405 (Logged Out) ou sessão inválida, limpamos tudo e reiniciamos do zero absoluto
-            if (statusCode === DisconnectReason.loggedOut || statusCode === 405) {
-                console.log('❌ Sessão considerada inválida pelo WhatsApp. Forçando reset...');
+            // Tratamento preventivo: 401, 403, 405 indicam credenciais corrompidas ou banidas
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 405 || statusCode === 401) {
+                console.log('❌ Sessão inválida ou desconectada pelo usuário. Reiniciando do zero absoluto...');
                 forcarLimpezaGeral();
-                setTimeout(() => iniciarBot(), 5000);
+                setTimeout(() => iniciarBot(), 5000); // Aguarda o Render liberar os arquivos e inicia limpo
             } else {
-                // Para outros erros comuns de rede, apenas aguarda e tenta reconectar
-                setTimeout(() => iniciarBot(), 10000);
+                // Erros comuns de rede ou queda de conexão do Render
+                setTimeout(() => iniciarBot(), 8000);
             }
         } else if (connection === 'open') {
             ultimoQrCode = null;
             statusConexao = "conectado";
-            console.log('🚀 [SUCESSO] Bot conectado com sucesso via QR Code!');
+            console.log('🚀 [SUCESSO] Bot conectado com sucesso!');
         }
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    botSocket.ev.on('creds.update', saveCreds);
 }
 
 iniciarBot().catch(err => console.error('[ERRO CRÍTICO]:', err));
