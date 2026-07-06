@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const dbPath = path.join(__dirname, 'database.json');
-const DONO_NUMERO = '258840504242@s.whatsapp.net';
+const DONO_NUMERO = '258877080511@s.whatsapp.net';
 
 // Funções de leitura e escrita no Banco de Dados
 function lerDB() {
