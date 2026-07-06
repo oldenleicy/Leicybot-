@@ -1,0 +1,9 @@
+{
+  "usuarios": {},
+  "grupos": {},
+  "config_bot": {
+    "url_foto_menu": "https://i.imgur.com/Kdf946S.png",
+    "manutencao": false,
+    "comandos_desativados": []
+  }
+}
