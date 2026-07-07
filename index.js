@@ -39,6 +39,24 @@ function limparSessaoInvalida() {
 }
 
 async function iniciarBot() {
+    const pastaAuth = path.join(__dirname, 'auth_info');
+
+    // ─── NOVO: RECONSTRÓI A SESSÃO A PARTIR DA VARIÁVEL DO RENDER CASO ELA EXISTA ───
+    if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
+        try {
+            fs.mkdirSync(pastaAuth, { recursive: true });
+            const sessionData = JSON.parse(Buffer.from(process.env.WA_SESSION_DATA, 'base64').toString('utf-8'));
+            
+            Object.keys(sessionData).forEach(file => {
+                fs.writeFileSync(path.join(pastaAuth, file), JSON.stringify(sessionData[file]));
+            });
+            console.log('[SISTEMA] Sessão restaurada com sucesso a partir das Variáveis de Ambiente!');
+        } catch (e) {
+            console.error('[ERRO VARIÁVEL SESSÃO]: Dados inválidos ou corrompidos na variável.', e.message);
+        }
+    }
+    // ───────────────────────────────────────────────────────────────────────────────
+
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     
     // Busca dinamicamente a última versão suportada pelo ecossistema web do WhatsApp
@@ -56,7 +74,32 @@ async function iniciarBot() {
     });
 
     // Monitora e salva as atualizações de chaves
-    botSocket.ev.on('creds.update', saveCreds);
+    botSocket.ev.on('creds.update', async () => {
+        await saveCreds();
+
+        // ─── NOVO: GERA O TEXTO BASE64 PARA VOCÊ COPIAR DO LOG LOGO APÓS LOGAR ───
+        try {
+            if (fs.existsSync(pastaAuth)) {
+                const files = fs.readdirSync(pastaAuth);
+                const sessionObj = {};
+                files.forEach(file => {
+                    // Ignora arquivos vazios ou pastas acidentais
+                    if (fs.statSync(path.join(pastaAuth, file)).isFile()) {
+                        sessionObj[file] = JSON.parse(fs.readFileSync(path.join(pastaAuth, file), 'utf-8'));
+                    }
+                });
+                const base64String = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
+                
+                console.log('\n==================================================');
+                console.log('📋 COPIE A LINHA GIGANTE ABAIXO E SALVE NO RENDER COMO WA_SESSION_DATA:');
+                console.log(base64String);
+                console.log('==================================================\n');
+            }
+        } catch (e) {
+            // Ignora se der erro ao tentar ler arquivos parciais na primeira inicialização
+        }
+        // ───────────────────────────────────────────────────────────────────────
+    });
 
     // Se o bot não estiver registrado localmente, faz o disparo limpo do código de 8 dígitos
     if (!botSocket.authState.creds.registered) {
