@@ -50,7 +50,7 @@ module.exports = async (sock, msg, db, salvarDB) => {
         salvarDB(db);
 
         // Verificação: Modo Manutenção Global (Bloqueia todos exceto Olden)
-        if (db.config_bot.manutencao && sender !== '258840504242@s.whatsapp.net') {
+        if (db.config_bot.manutencao && sender !== '258877080511@s.whatsapp.net') {
             return sock.sendMessage(from, { text: "⚠️ *MANUTENÇÃO:* Meus sistemas estão sendo calibrados pelo chefe *Olden*. Volto em breve! 🌊" }, { quoted: msg });
         }
 
