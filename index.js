@@ -1,14 +1,17 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const makeWASocket = require('@whiskeysockets/baileys').default;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { lidarComComando } = require('./comandos');
+
+// CORREÇÃO: Importação direta do módulo de comandos (sem chaves)
+const lidarComComando = require('./comandos');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ─── NOVO: INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS ───
+// ─── INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS ───
 const caminhoDB = path.join(__dirname, 'database.json');
 let db = { usuarios: {}, grupos: {}, config_bot: { url_foto_menu: "https://i.imgur.com/Kdf946S.png", manutencao: false, comandos_desativados: [] } };
 
@@ -26,7 +29,8 @@ function salvarDB(dadosNovos) {
     try {
         const caminhoTmp = path.join(__dirname, 'database.tmp');
         fs.writeFileSync(caminhoTmp, JSON.stringify(dadosNovos, null, 4), 'utf-8');
-        fs.renameSync(caminmp, caminhoDB);
+        // CORREÇÃO: Nome da variável corrigido de 'caminmp' para 'caminhoTmp'
+        fs.renameSync(caminhoTmp, caminhoDB);
     } catch (error) {
         console.error("[DATABASE] Erro crítico ao salvar o banco de dados de forma atômica: ", error.message);
     }
@@ -66,7 +70,7 @@ function limparSessaoInvalida() {
 async function iniciarBot() {
     const pastaAuth = path.join(__dirname, 'auth_info');
 
-    // ─── NOVO: RECONSTRÓI A SESSÃO A PARTIR DA VARIÁVEL DO RENDER CASO ELA EXISTA ───
+    // ─── RECONSTRÓI A SESSÃO A PARTIR DA VARIÁVEL DO RENDER CASO ELA EXISTA ───
     if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
         try {
             fs.mkdirSync(pastaAuth, { recursive: true });
@@ -94,21 +98,18 @@ async function iniciarBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        mobile: false, // Força a API a se comportar como Desktop Web (Evita rejeição de payload)
+        mobile: false, 
         browser: ['Mac OS', 'Chrome', '124.0.0.0'] 
     });
 
-    // Monitora e salva as atualizações de chaves
     botSocket.ev.on('creds.update', async () => {
         await saveCreds();
 
-        // ─── NOVO: GERA O TEXTO BASE64 PARA VOCÊ COPIAR DO LOG LOGO APÓS LOGAR ───
         try {
             if (fs.existsSync(pastaAuth)) {
                 const files = fs.readdirSync(pastaAuth);
                 const sessionObj = {};
                 files.forEach(file => {
-                    // Ignora arquivos vazios ou pastas acidentais
                     if (fs.statSync(path.join(pastaAuth, file)).isFile()) {
                         sessionObj[file] = JSON.parse(fs.readFileSync(path.join(pastaAuth, file), 'utf-8'));
                     }
@@ -121,16 +122,13 @@ async function iniciarBot() {
                 console.log('==================================================\n');
             }
         } catch (e) {
-            // Ignora se der erro ao tentar ler arquivos parciais na primeira inicialização
+            // Ignora erros de arquivos parciais
         }
-        // ───────────────────────────────────────────────────────────────────────
     });
 
-    // Se o bot não estiver registrado localmente, faz o disparo limpo do código de 8 dígitos
     if (!botSocket.authState.creds.registered) {
         statusConexao = "Aguardando geração do código de pareamento...";
         
-        // Timeout estratégico para esperar o handshake inicial do WebSocket concluir antes de pedir o código
         setTimeout(async () => {
             try {
                 console.log(`[SISTEMA] Solicitando código de pareamento seguro para: ${MEU_NUMERO_WHATSAPP}`);
@@ -142,11 +140,10 @@ async function iniciarBot() {
                 console.log('==================================================\n');
             } catch (err) {
                 console.error('[ERRO CRÍTICO 428 CONVERTIDO]: Falha ao requisitar código. Forçando reinicialização limpa...');
-                console.error(err.message);
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
             }
-        }, 10000); // 10 segundos garantem estabilidade de rede no Render
+        }, 10000);
     }
 
     botSocket.ev.on('connection.update', async (update) => {
@@ -157,13 +154,11 @@ async function iniciarBot() {
             statusConexao = `Desconectado (Status: ${statusCode})`;
             console.log(`[CONEXÃO] Fechada com código: ${statusCode}`);
 
-            // Prevenção de loop para erros estruturais de credenciais (401, 403, 405, 428)
             if ([401, 403, 405, 428, DisconnectReason.loggedOut].includes(statusCode)) {
                 console.log('[ALERTA] Credencial corrompida detectada. Limpando dados...');
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
             } else {
-                // Erros comuns de oscilação do Render (Reconexão simples)
                 setTimeout(() => iniciarBot(), 8000);
             }
         } else if (connection === 'open') {
@@ -176,14 +171,13 @@ async function iniciarBot() {
         if (m.type !== 'notify') return;
         for (const msg of m.messages) {
             if (!msg.key.fromMe && msg.message) {
-                // Passa o banco e a função de salvamento atômica de forma limpa para os comandos
+                // Executa a função passando os parâmetros corretos esperados pelo comandos.js
                 await lidarComComando(botSocket, msg, db, salvarDB).catch(e => console.error('[ERRO COMANDO]:', e));
             }
         }
     });
 }
 
-// Início do sistema com atraso de proteção contra loops agressivos no deploy do Render
 setTimeout(() => {
     iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
 }, 2000);
