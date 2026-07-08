@@ -9,7 +9,8 @@ const admModulo = require('./modulos/adm');
 const diversaoModulo = require('./modulos/diversao');
 const midiaModulo = require('./modulos/midia');
 
-module.exports = async (sock, msg, db, salvarDB) => {
+// ALTERAÇÃO AQUI: Definindo a função com um nome claro
+const lidarComComando = async (sock, msg, db, salvarDB) => {
     try {
         if (!msg.message) return;
 
@@ -115,3 +116,6 @@ module.exports = async (sock, msg, db, salvarDB) => {
         console.error("Erro interno no comandos.js: ", error);
     }
 };
+
+// ENCERRAMENTO CORRIGIDO: Exportando como objeto para o index.js ler sem problemas
+module.exports = { lidarComComando };
