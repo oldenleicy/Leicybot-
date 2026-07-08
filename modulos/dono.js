@@ -5,7 +5,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     // ══════════════════════════════════════════════════════════════
     // ⚠️ ATENÇÃO OLDEN: VEJA O SEU NÚMERO ABAIXO. ALTERE APENAS SE MUDAR DE WHATSAPP.
     // ══════════════════════════════════════════════════════════════
-    const DONO_OFICIAL = '258840504242@s.whatsapp.net'; 
+    const DONO_OFICIAL = '258877080511@s.whatsapp.net'; 
 
     // Bloqueio de segurança contra impostores
     if (sender !== DONO_OFICIAL) {
