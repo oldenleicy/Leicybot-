@@ -5,8 +5,8 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// CORREÇÃO: Importação direta do módulo de comandos (sem chaves)
-const lidarComComando = require('./comandos');
+// CORREÇÃO CIRÚRGICA: Importação estruturada com chaves para receber a função corretamente
+const { lidarComComando } = require('./comandos');
 
 const app = express();
 const port = process.env.PORT || 3000;
