@@ -9,7 +9,7 @@ const admModulo = require('./modulos/adm');
 const diversaoModulo = require('./modulos/diversao');
 const midiaModulo = require('./modulos/midia');
 
-// ALTERAÇÃO AQUI: Definindo a função com um nome claro
+// Definição da função principal
 const lidarComComando = async (sock, msg, db, salvarDB) => {
     try {
         if (!msg.message) return;
@@ -81,31 +81,36 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             return sock.sendMessage(from, { text: explicacaoPronta }, { quoted: msg });
         }
 
-        // 🗺️ DIRECIONAMENTO DE MÓDULOS (Os 200 Comandos Mapeados)
+        // 🗺️ DIRECIONAMENTO DE MÓDULOS (CORRIGIDO PARA EVITAR OBJ-AS-FUNC CRASH)
 
         const cmdsEconomia = ['menugold', 'gold', 'saldo', 'carteira', 'trabalhar', 'minerar', 'assaltar', 'banco', 'pagar', 'rankgold', 'loja', 'comprar', 'vendertitulo', 'apresentacao'];
         if (cmdsEconomia.includes(comandoUnico)) {
-            return await economiaModulo(sock, msg, comandoUnico, argumentos, db, salvarDB);
+            const executarEconomia = economiaModulo.economiaModulo || economiaModulo.default || economiaModulo;
+            return await executarEconomia(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         const cmdsAdm = ['menuadm', 'ban', 'kick', 'promover', 'rebaixar', 'antilink', 'antilink2', 'fakes', 'grupo', 'limpar', 'marcar', 'adms', 'setregras', 'regras', 'setwelcome1', 'setwelcome2', 'setwelcome3', 'bv1', 'bv2', 'bv3', 'atividade', 'online'];
         if (cmdsAdm.includes(comandoUnico)) {
-            return await admModulo(sock, msg, comandoUnico, argumentos, db, salvarDB);
+            const executarAdm = admModulo.admModulo || admModulo.default || admModulo;
+            return await executarAdm(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         const cmdsDiversao = ['menujogos', 'duelo', 'casar', 'aceitar', 'divorciar', 'beijar', 'bater', 'abracar', 'gado', 'gostoso', 'curiosidade'];
         if (cmdsDiversao.includes(comandoUnico)) {
-            return await diversaoModulo(sock, msg, comandoUnico, argumentos, db, salvarDB);
+            const executarDiversao = diversaoModulo.diversaoModulo || diversaoModulo.default || diversaoModulo;
+            return await executarDiversao(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         const cmdsMidia = ['menumidia', 'sticker', 's', 'copiarsticker', 'anime', 'clima', 'google'];
         if (cmdsMidia.includes(comandoUnico)) {
-            return await midiaModulo(sock, msg, comandoUnico, argumentos);
+            const executarMidia = midiaModulo.midiaModulo || midiaModulo.default || midiaModulo;
+            return await executarMidia(sock, msg, comandoUnico, argumentos);
         }
 
         const cmdsDono = ['manutencao', 'burlar', 'desativarcmd', 'ativarcmd', 'addgold', 'remgold', 'addcelestial', 'setfoto', 'nomebot', 'limpardb', 'transmitir', 'reiniciar', 'desligar'];
         if (cmdsDono.includes(comandoUnico)) {
-            return await donoModulo(sock, msg, comandoUnico, argumentos, db, salvarDB);
+            const executarDono = donoModulo.donoModulo || donoModulo.default || donoModulo;
+            return await executarDono(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         // Se começar com "!" mas não for um comando existente
@@ -117,5 +122,5 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
     }
 };
 
-// ENCERRAMENTO CORRIGIDO: Exportando como objeto para o index.js ler sem problemas
+// Exportando como objeto estruturado para o index.js mapear sem falhas
 module.exports = { lidarComComando };
