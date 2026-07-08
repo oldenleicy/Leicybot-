@@ -11,28 +11,51 @@ const lidarComComando = require('./comandos');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ─── INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS ───
+// ─── INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS (BLINDADO) ───
 const caminhoDB = path.join(__dirname, 'database.json');
-let db = { usuarios: {}, grupos: {}, config_bot: { url_foto_menu: "https://i.imgur.com/Kdf946S.png", manutencao: false, comandos_desativados: [] } };
 
-if (fs.existsSync(caminhoDB)) {
-    try {
-        db = JSON.parse(fs.readFileSync(caminhoDB, 'utf-8'));
-    } catch (e) {
-        console.error('[DATABASE] Erro ao ler banco de dados existente, reiniciando cache local.', e.message);
+// Estrutura padrão indestrutível para evitar panes de leitura
+const estruturaPadrao = { 
+    usuarios: {}, 
+    grupos: {}, 
+    config_bot: { 
+        url_foto_menu: "https://i.imgur.com/Kdf946S.png", 
+        manutencao: false, 
+        comandos_desativados: [] 
+    } 
+};
+
+let db = estruturaPadrao;
+
+try {
+    if (fs.existsSync(caminhoDB)) {
+        const conteudo = fs.readFileSync(caminhoDB, 'utf-8').trim();
+        // Se o arquivo existir mas estiver vazio ou inválido, força a estrutura padrão
+        if (conteudo && conteudo !== "") {
+            db = JSON.parse(conteudo);
+            // Garante que as propriedades cruciais existem dentro do arquivo carregado
+            if (!db.config_bot) db.config_bot = estruturaPadrao.config_bot;
+            if (!db.usuarios) db.usuarios = estruturaPadrao.usuarios;
+            if (!db.grupos) db.grupos = estruturaPadrao.grupos;
+        } else {
+            fs.writeFileSync(caminhoDB, JSON.stringify(estruturaPadrao, null, 4), 'utf-8');
+        }
+    } else {
+        fs.writeFileSync(caminhoDB, JSON.stringify(estruturaPadrao, null, 4), 'utf-8');
     }
-} else {
-    fs.writeFileSync(caminhoDB, JSON.stringify(db, null, 4), 'utf-8');
+} catch (e) {
+    console.error('[DATABASE] Arquivo corrompido ou vazio detectado! Aplicando estrutura de segurança.', e.message);
+    db = estruturaPadrao;
+    fs.writeFileSync(caminhoDB, JSON.stringify(estruturaPadrao, null, 4), 'utf-8');
 }
 
 function salvarDB(dadosNovos) {
     try {
         const caminhoTmp = path.join(__dirname, 'database.tmp');
         fs.writeFileSync(caminhoTmp, JSON.stringify(dadosNovos, null, 4), 'utf-8');
-        // CORREÇÃO: Nome da variável corrigido de 'caminmp' para 'caminhoTmp'
         fs.renameSync(caminhoTmp, caminhoDB);
     } catch (error) {
-        console.error("[DATABASE] Erro crítico ao salvar o banco de dados de forma atômica: ", error.message);
+        console.error("[DATABASE] Erro crítico ao salvar o banco de dados: ", error.message);
     }
 }
 // ─────────────────────────────────────────────────────────────
@@ -70,7 +93,7 @@ function limparSessaoInvalida() {
 async function iniciarBot() {
     const pastaAuth = path.join(__dirname, 'auth_info');
 
-    // ─── RECONSTRÓI A SESSÃO A PARTIR DA VARIÁVEL DO RENDER CASO ELA EXISTA ───
+    // ─── RECONSTRÓI A SESSÃO A PARTIR DA VARIÁVEL CASO ELA EXISTA ───
     if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
         try {
             fs.mkdirSync(pastaAuth, { recursive: true });
@@ -117,7 +140,7 @@ async function iniciarBot() {
                 const base64String = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
                 
                 console.log('\n==================================================');
-                console.log('📋 COPIE A LINHA GIGANTE ABAIXO E SALVE NO RENDER COMO WA_SESSION_DATA:');
+                console.log('📋 COPIE A LINHA GIGANTE ABAIXO E SALVE SE NECESSÁRIO COMO WA_SESSION_DATA:');
                 console.log(base64String);
                 console.log('==================================================\n');
             }
