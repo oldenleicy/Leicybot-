@@ -5,8 +5,10 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// Importação estruturada com chaves para receber a função corretamente
-const { lidarComComando } = require('./comandos');
+// ─── IMPORTAÇÃO BLINDADA DO MÓDULO DE COMANDOS ───
+// Aceita tanto exportações por objeto { lidarComComando } quanto por função direta
+const comandosModulo = require('./comandos');
+const lidarComComando = comandosModulo.lidarComComando || comandosModulo;
 
 const app = express();
 const port = process.env.PORT || 3000;
