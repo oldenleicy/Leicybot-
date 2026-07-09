@@ -81,7 +81,7 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             return sock.sendMessage(from, { text: explicacaoPronta }, { quoted: msg });
         }
 
-        // 🗺️ DIRECIONAMENTO DE MÓDULOS SEGURO (Preve o formato de exportação interno de cada pasta)
+        // 🗺️ DIRECIONAMENTO DE MÓDULOS SEGURO
 
         const cmdsEconomia = ['menugold', 'gold', 'saldo', 'carteira', 'trabalhar', 'minerar', 'assaltar', 'banco', 'pagar', 'rankgold', 'loja', 'comprar', 'vendertitulo', 'apresentacao'];
         if (cmdsEconomia.includes(comandoUnico)) {
@@ -104,7 +104,8 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         const cmdsMidia = ['menumidia', 'sticker', 's', 'copiarsticker', 'anime', 'clima', 'google'];
         if (cmdsMidia.includes(comandoUnico)) {
             const executarMidia = midiaModulo.midiaModulo || midiaModulo.default || midiaModulo;
-            return await executarMidia(sock, msg, comandoUnico, argumentos);
+            // Correção: Adicionados os parâmetros db e salvarDB pendentes
+            return await executarMidia(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         const cmdsDono = ['manutencao', 'burlar', 'desativarcmd', 'ativarcmd', 'addgold', 'remgold', 'addcelestial', 'setfoto', 'nomebot', 'limpardb', 'transmitir', 'reiniciar', 'desligar'];
@@ -122,5 +123,6 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
     }
 };
 
-// Exportando como objeto estruturado para o index.js mapear sem falhas
-module.exports = { lidarComComando };
+// Exportação tripla para anular de vez qualquer conflito de importação no index.js
+module.exports = lidarComComando;
+module.exports.lidarComComando = lidarComComando;
