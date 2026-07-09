@@ -49,11 +49,15 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
     switch (comando) {
         case 'menugold':
-            const menuGoldTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧- 𝗘𝗖𝗢𝗡𝗢𝗠𝗜𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Sob a gerência do comandante Olden.\n\n ➔ *!gold* - Consulta saldo, banco, títulos e energias.\n ➔ *!trabalhar* - Executa tarefas seguras (Lim. 5/dia).\n ➔ *!minerar* - Tenta escavar na mina de risco (Lim. 5/dia).\n ➔ *!assaltar [@user]* - Tenta saquear os Golds em mãos de um alvo.\n ➔ *!pagar [@user] [quantia]* - Transfere dinheiro para um amigo.\n ➔ *!banco depositar [quantia]* - Guarda fundos com segurança.\n ➔ *!banco sacar [quantia]* - Retira fundos do banco.\n ➔ *!rankgold* - Placar dos 10 bilionários do grupo.\n ➔ *!loja* - Abre a vitrine de itens e títulos temporários.\n ➔ *!comprar [nome_do_item]* - Adquire um privilégio.\n ➔ *!vendertitulo* - Remove seus títulos atuais para abrir vagas.\n ➔ *!apresentacao* - Liga/Desliga anúncio automático de 3 horas.\n░▒▓█████████████████████████████████████▓▒░`;
+            const menuGoldTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢𝗣 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 - 𝗘𝗖𝗢𝗡𝗢𝗠𝗜𝗔  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Sob a gerência do comandante Olden.\n\n ➔ *!gold* - Consulta saldo, banco, títulos e energias.\n ➔ *!trabalhar* - Executa tarefas seguras (Lim. 5/dia).\n ➔ *!minerar* - Tenta escavar na mina de risco (Lim. 5/dia).\n ➔ *!assaltar [@user]* - Tenta saquear os Golds em mãos de um alvo.\n ➔ *!pagar [@user] [quantia]* - Transfere dinheiro para um amigo.\n ➔ *!banco depositar [quantia]* - Guarda fundos com segurança.\n ➔ *!banco sacar [quantia]* - Retira fundos do banco.\n ➔ *!rankgold* - Placar dos 10 bilionários do grupo.\n ➔ *!loja* - Abre a vitrine de itens e títulos temporários.\n ➔ *!comprar [nome_do_item]* - Adquire um privilégio.\n ➔ *!vendertitulo* - Remove seus títulos atuais para abrir vagas.\n ➔ *!apresentacao* - Liga/Desliga anúncio automático de 3 horas.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuGoldTxt }, { quoted: msg });
             break;
 
         case 'gold':
+            // Inicialização preventiva de segurança para valores nulos
+            if (u.trabalhos_hoje === undefined) u.trabalhos_hoje = 0;
+            if (u.mineracoes_hoje === undefined) u.mineracoes_hoje = 0;
+
             // Sincroniza e limpa as energias se mudar o dia
             const hojeData = new Date().toLocaleDateString();
             if (u.ultimo_mensagem_data !== hojeData) {
@@ -67,6 +71,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'trabalhar':
+            if (u.trabalhos_hoje === undefined) u.trabalhos_hoje = 0;
             if (u.trabalhos_hoje >= 5) return sock.sendMessage(from, { text: "🌊 Energia esgotada! Você já atingiu seu limite diário de 5 trabalhos. Volte amanhã! 💧" }, { quoted: msg });
             const ganhoTrab = Math.floor(Math.random() * 41) + 40; // 40 a 80 Golds
             u.golds += ganhoTrab;
@@ -76,6 +81,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'minerar':
+            if (u.mineracoes_hoje === undefined) u.mineracoes_hoje = 0;
             if (u.mineracoes_hoje >= 5) return sock.sendMessage(from, { text: "🌊 Energia esgotada! Você já atingiu seu limite de 5 minerações diárias. 💧" }, { quoted: msg });
             u.mineracoes_hoje += 1;
             
@@ -158,12 +164,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'rankgold':
-            // Mapeia e organiza os 10 usuários com maiores fortunas combinadas (mão + banco)
             let ordenados = Object.keys(db.usuarios).map(id => {
                 return { id, total: (db.usuarios[id].golds || 0) + (db.usuarios[id].banco || 0) };
             }).sort((a, b) => b.total - a.total).slice(0, 10);
 
-            let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢𝗣 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
+            let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢package 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
             const medalhas = ["🥇", "🥈", "🥉", "💧", "💧", "💧", "💧", "💧", "💧", "💧"];
             ordenados.forEach((m, idx) => {
                 rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 💳 *${m.total} Golds*\n`;
@@ -181,8 +186,18 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const itemAlvo = args[0]?.toLowerCase();
             if (!itemAlvo) return sock.sendMessage(from, { text: "❌ Indique o que deseja comprar! Ex: `!comprar escudo` ou `!comprar luasuperior3`" }, { quoted: msg });
 
+            // Correção: Trata a compra do item Escudo corretamente
+            if (itemAlvo === 'escudo') {
+                if (u.golds < 50) return sock.sendMessage(from, { text: "❌ Golds insuficientes! O Escudo custa 50 Golds." }, { quoted: msg });
+                if (u.escudo) return sock.sendMessage(from, { text: "🛡️ Você já possui um escudo ativo em sua conta!" }, { quoted: msg });
+                u.golds -= 50;
+                u.escudo = true;
+                salvarDB(db);
+                return sock.sendMessage(from, { text: "🛡️ *ESCUDO ADQUIRIDO:* Seu sistema de segurança está ativo contra o próximo assalto! 🌊" }, { quoted: msg });
+            }
+
             if (itemAlvo === 'apresentacaobuy') {
-                if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { quoted: msg });
+                if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { json: true });
                 u.golds -= 100;
                 u.apresentacao = true;
                 salvarDB(db);
@@ -192,15 +207,13 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const itemTitulo = catálogoTítulos[itemAlvo];
             if (!itemTitulo) return sock.sendMessage(from, { text: "❌ Item ou título não encontrado em nossa vitrine. Digite *!loja* para ver as opções!" }, { quoted: msg });
 
-            if (u.golds < itemTitulo.preco) return sock.sendMessage(from, { text: `❌ Saldo insuficiente! O título *${itemTitulo.nome}* exige *${itemTitulo.preco} Golds* em mãos.` }, { quoted: msg });
+            if (u.golds < itemTitulo.preco) return sock.sendMessage(from, { text: `❌ Saldo insuficiente! O título *${itemTitulo.nome}* exige *${itemTitulo.preco} Golds* in mãos.` }, { quoted: msg });
 
-            // Validação rígida de cotas máximas da raridade por grupo
             let limitesRaridade = { "Lendario": 1, "Ouro": 5, "Prata": 15 };
             if (contarDonosRaridade(itemTitulo.raridade) >= limitesRaridade[itemTitulo.raridade]) {
                 return sock.sendMessage(from, { text: `❌ Vagas esgotadas no grupo para títulos de nível *${itemTitulo.raridade}*! Aguarde alguém vender ou expirar.` }, { quoted: msg });
             }
 
-            // Alocação em slots de acúmulo (Max 2 títulos por usuário)
             if (u.titulo_1 === itemTitulo.nome || u.titulo_2 === itemTitulo.nome) {
                 return sock.sendMessage(from, { text: "❌ Você já possui esse título equipado em sua carteira!" }, { quoted: msg });
             }
