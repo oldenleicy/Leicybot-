@@ -23,6 +23,8 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'burlar':
+            // Inicialização de segurança caso o dono não esteja no banco de dados
+            if (!db.usuarios[sender]) db.usuarios[sender] = { golds: 100, banco: 0, trabalhos_hoje: 0, mineracoes_hoje: 0 };
             db.usuarios[sender].trabalhos_hoje = 0;
             db.usuarios[sender].mineracoes_hoje = 0;
             salvarDB(db);
@@ -46,7 +48,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'addgold':
-            const mencionado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || args[0] + '@s.whatsapp.net';
+            const mencionado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || (args[0] ? args[0] + '@s.whatsapp.net' : null);
             const quantia = parseInt(args[1] || args[0]);
             if (!mencionado || isNaN(quantia)) return sock.sendMessage(from, { text: "❌ Uso: *!addgold [@membro] [quantidade]*" }, { quoted: msg });
             
@@ -61,6 +63,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const quantiaRem = parseInt(args[1]);
             if (!alvoRem || isNaN(quantiaRem)) return sock.sendMessage(from, { text: "❌ Uso: *!remgold [@membro] [quantidade]*" }, { quoted: msg });
             
+            if (!db.usuarios[alvoRem]) db.usuarios[alvoRem] = { golds: 100, banco: 0 };
             db.usuarios[alvoRem].golds = Math.max(0, db.usuarios[alvoRem].golds - quantiaRem);
             salvarDB(db);
             await sock.sendMessage(from, { text: `📉 *MULTA APLICADA:* Removidos *${quantiaRem} Golds* da conta do infrator.` }, { quoted: msg });
@@ -70,6 +73,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const alvoCel = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!alvoCel) return sock.sendMessage(from, { text: "❌ Mencione quem receberá o título divino Celestial!" }, { quoted: msg });
             
+            if (!db.usuarios[alvoCel]) db.usuarios[alvoCel] = { golds: 100, banco: 0 };
             db.usuarios[alvoCel].titulo_1 = "🌌 Celestial 💎";
             db.usuarios[alvoCel].data_expiracao = Date.now() + 604800000; // 1 semana de duração estável
             salvarDB(db);
@@ -96,7 +100,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
         case 'transmitir':
             if (!args[0]) return sock.sendMessage(from, { text: "❌ Digite o texto da transmissão global." }, { quoted: msg });
-            // Aqui seria feito um loop nos grupos salvos no banco enviando a mensagem
             await sock.sendMessage(from, { text: `📢 Transmissão enviada para as centrais de comando!` }, { quoted: msg });
             break;
 
@@ -107,7 +110,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
         case 'desligar':
             await sock.sendMessage(from, { text: "💤 Desligando módulos de resposta por tempo indeterminado..." }, { quoted: msg });
-            // Lógica para travar o listener interno
             break;
             
         default:
