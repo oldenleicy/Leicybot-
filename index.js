@@ -5,10 +5,18 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// ─── IMPORTAÇÃO BLINDADA DO MÓDULO DE COMANDOS ───
-// Aceita tanto exportações por objeto { lidarComComando } quanto por função direta
-const comandosModulo = require('./comandos');
-const lidarComComando = comandosModulo.lidarComComando || comandosModulo;
+// ─── DIAGNÓSTICO DOS COMANDOS ───
+let lidarComComando = null;
+try {
+    const comandosModulo = require('./comandos');
+    lidarComComando = comandosModulo.lidarComComando || comandosModulo;
+} catch (erroDeImportacao) {
+    console.error('\n🚨 [ERRO CRÍTICO NO ARQUIVO COMANDOS.JS OU MÓDULOS] 🚨');
+    console.error(erroDeImportacao.stack);
+    console.error('──────────────────────────────────────────────────\n');
+    // Função temporária de segurança para o bot não ficar caindo em loop
+    lidarComComando = async () => { console.log('[SISTEMA] Mensagem ignorada pois o comandos.js contém erros.'); };
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
