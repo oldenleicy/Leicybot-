@@ -2,13 +2,17 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
     const sender = msg.key.participant || msg.key.remoteJid;
 
-    // Inicialização de dados sociais no usuário caso não existam
+    // Correção: Inicialização de segurança para evitar crash fatal caso o usuário não exista no banco
+    if (!db.usuarios[sender]) {
+        db.usuarios[sender] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+    }
+    
     let u = db.usuarios[sender];
-    if (!u.beijados) u.beijados = 0;
-    if (!u.abracados) u.abracados = 0;
-    if (!u.conjugue) u.conjugue = null;
+    if (u.beijados === undefined) u.beijados = 0;
+    if (u.abracados === undefined) u.abracados = 0;
+    if (u.conjugue === undefined) u.conjugue = null;
 
-    // Banco gigante de Curiosidades Segmentadas (10 Subcategorias Estritas)
+    // Banco de Curiosidades Segmentadas
     const bancoCuriosidades = {
         sports: [
             "O basquete foi inventado usando cestas de colheita de pêssegos em 1891! O esporte era tão lento que precisavam de uma escada para tirar a bola a cada ponto. 🏀",
@@ -23,7 +27,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             "Se você pudesse dobrar uma folha de papel ao meio exatamente 42 vezes, a espessura dela seria grande o suficiente para chegar até a Lua! 🤯🔬"
         ],
         arte: [
-            "Leonardo da Vinci passava anos pintando apenas os lábios da Mona Lisa. Ele era tão perfeccionista que quase enlouqueceu os clientes! 🎨",
+            "Leonardo da Vinci passava anos pintando apenas os lábios da Mona Lisa. He era tão perfeccionista que quase enlouqueceu os clientes! 🎨",
             "A famosa estátua de David, de Michelangelo, foi esculpida a partir de um bloco de mármore gigante que outros dois artistas jogaram fora por acharem 'defeituoso'. 🗿"
         ],
         filmes: [
@@ -39,7 +43,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             "Eiichiro Oda, criador de One Piece, dorme apenas 3 horas por noite há mais de 20 anos para conseguir entregar os capítulos do mangá em dia! 🏴‍☠️🍖"
         ],
         tecnologia: [
-            "O primeiro mouse de computador da história foi construído em 1964 e era feito inteiramente de madeira com duas engrenagens de metal! 💻🪵",
+            "O primeiro mouse de computador da história foi construído in 1964 e era feito inteiramente de madeira com duas engrenagens de metal! 💻🪵",
             "O primeiro vírus de computador foi criado em 1971 e se chamava 'Creeper'. Ele não destruía nada, só exibia a mensagem: 'Pegue-me se for capaz!'. 👾"
         ],
         natureza: [
@@ -48,7 +52,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         ]
     };
 
-    switch (comando) {
+    // Divide comandos que entram no formato !curiosidade/animes
+    const comandoBase = comando.split('/')[0];
+    const subCategoriaCmd = comando.split('/')[1]?.toLowerCase();
+
+    switch (comandoBase) {
         case 'menujogos':
             const menuJogosTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🎮  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗗𝗜𝗩𝗘𝗥𝗦𝗔𝗢  🎮      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 A zoeira e os mini-games oficiais do grupo!\n\n ➔ *!duelo [@user] [aposta]* - Combate valendo Golds.\n ➔ *!casar [@user]* - Faz o pedido oficial de matrimônio.\n ➔ *!aceitar* - Consuma a união sob a benção de Olden.\n ➔ *!divorciar* - Encerra o casamento virtual.\n ➔ *!beijar / !bater / !abracar [@user]* - Ações textuais cômicas.\n ➔ *!gado* - Mede o nível de paixão boba do membro.\n ➔ *!gostoso* - Avalia a latência da sua beleza.\n ➔ *!curiosidade* - Fato aleatório global do robô.\n ➔ *!curiosidade/[categoria]* - Alvo estrito:\n    _(sports, games, ciencia, arte, filmes, historia, animes, tecnologia, natureza)_\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuJogosTxt }, { quoted: msg });
@@ -63,13 +71,15 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             if (isNaN(aposta) || aposta <= 0) return sock.sendMessage(from, { text: "❌ Defina uma quantia válida de Golds para apostar no combate!" }, { quoted: msg });
 
             if (u.golds < aposta) return sock.sendMessage(from, { text: "❌ Você não tem todos esses Golds em mãos para sustentar esse desafio!" }, { quoted: msg });
-            if (!db.usuarios[adversario]) db.usuarios[adversario] = { golds: 100 };
+            
+            if (!db.usuarios[adversario]) {
+                db.usuarios[adversario] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+            }
             
             if (db.usuarios[adversario].golds < aposta) {
                 return sock.sendMessage(from, { text: "❌ O seu oponente está muito quebrado e não tem essa quantia para cobrir a aposta!" }, { quoted: msg });
             }
 
-            // Mecânica de sorte pura com narrativa cômica
             if (Math.random() > 0.5) {
                 u.golds += aposta;
                 db.usuarios[adversario].golds -= aposta;
@@ -88,8 +98,10 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             if (!pretendente) return sock.sendMessage(from, { text: "❌ Marque a pessoa sortuda (ou azarada) para fazer o pedido de casamento!" }, { quoted: msg });
             if (pretendente === sender) return sock.sendMessage(from, { text: "🛑 Casar com você mesmo? O nível de carência superou as expectativas do bot." }, { quoted: msg });
             
-            if (!db.usuarios[pretendente]) db.usuarios[pretendente] = { golds: 100 };
-            db.usuarios[pretendente].pedido_casamento = sender; // Armazena temporariamente o pedido pendente
+            if (!db.usuarios[pretendente]) {
+                db.usuarios[pretendente] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+            }
+            db.usuarios[pretendente].pedido_casamento = sender;
             salvarDB(db);
 
             await sock.sendMessage(from, { text: `💍 *PEDIDO DE CASAMENTO:* 📢 Atenção chat! @${sender.split('@')[0]} está oficialmente de joelhos propondo casamento para @${pretendente.split('@')[0]}!\n\n👉 Alvo do pedido, digite *!aceitar* para confirmar ou mude de assunto imediatamente! 🌊`, mentions: [sender, pretendente] }, { quoted: msg });
@@ -99,6 +111,10 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             if (!u.pedido_casamento) return sock.sendMessage(from, { text: "❌ Ninguém te pediu em casamento recentemente... Que situação deprimente! 💧" }, { quoted: msg });
             const noivo = u.pedido_casamento;
             
+            if (!db.usuarios[noivo]) {
+                db.usuarios[noivo] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+            }
+
             u.conjugue = noivo;
             db.usuarios[noivo].conjugue = sender;
             u.pedido_casamento = null;
@@ -122,7 +138,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'beijar':
             const beijado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!beijado) return sock.sendMessage(from, { text: "❌ Marque quem você deseja beijar!" }, { quoted: msg });
-            if (!db.usuarios[beijado]) db.usuarios[beijado] = { beijados: 0 };
+            
+            if (!db.usuarios[beijado]) {
+                db.usuarios[beijado] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+            }
+            if (db.usuarios[beijado].beijados === undefined) db.usuarios[beijado].beijados = 0;
+            
             db.usuarios[beijado].beijados += 1;
             salvarDB(db);
             await sock.sendMessage(from, { text: `💋 @${sender.split('@')[0]} deu um beijo cinematográfico de tirar o fôlego em @${beijado.split('@')[0]}! O amor está flutuando no chat! 💕`, mentions: [sender, beijado] }, { quoted: msg });
@@ -137,7 +158,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'abracar':
             const abracado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!abracado) return sock.sendMessage(from, { text: "❌ Marque quem vai receber esse abraço!" }, { quoted: msg });
-            if (!db.usuarios[abracado]) db.usuarios[abracado] = { abracados: 0 };
+            
+            if (!db.usuarios[abracado]) {
+                db.usuarios[abracado] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+            }
+            if (db.usuarios[abracado].abracados === undefined) db.usuarios[abracado].abracados = 0;
+            
             db.usuarios[abracado].abracados += 1;
             salvarDB(db);
             await sock.sendMessage(from, { text: `🫂 @${sender.split('@')[0]} deu um abraço apertado e confortante em @${abracado.split('@')[0]}. Que momento lindo de amizade pura! 💧`, mentions: [sender, abracado] }, { quoted: msg });
@@ -156,16 +182,16 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'curiosidade':
-            // Lógica avançada para extrair subcategorias digitadas no estilo !curiosidade/animes
-            const subCategoria = msg.message.conversation?.split('/')?.[1] || msg.message.extendedTextMessage?.text?.split('/')?.[1];
+            // Lógica otimizada e blindada para capturar subcategorias via !curiosidade/categoria ou parâmetros comuns
+            let catAlvo = subCategoriaCmd || args[0]?.toLowerCase();
             
-            if (subCategoria && bancoCuriosidades[subCategoria.trim()]) {
-                const listaCurio = bancoCuriosidades[subCategoria.trim()];
+            if (catAlvo && bancoCuriosidades[catAlvo.trim()]) {
+                const listaCurio = bancoCuriosidades[catAlvo.trim()];
                 const fatoEscolhido = listaCurio[Math.floor(Math.random() * listaCurio.length)];
-                return sock.sendMessage(from, { text: `░▒▓ 🧠 𝗖𝗨𝗥𝗜𝗢𝗦𝗜𝗗𝗔𝗗𝗘: ${subCategoria.toUpperCase()} ▓▒░\n\n💡 *Você sabia?*\n${fatoEscolhido}` }, { quoted: msg });
+                return sock.sendMessage(from, { text: `░▒▓ 🧠 𝗖𝗨𝗥𝗜𝗢𝗦𝗜𝗗𝗔𝗗𝗘: ${catAlvo.toUpperCase()} ▓▒░\n\n💡 *Você sabia?*\n${fatoEscolhido}` }, { quoted: msg });
             }
 
-            // Fallback global genérico caso digite apenas !curiosidade
+            // Fallback global genérico estável
             const chavesGlobais = Object.keys(bancoCuriosidades);
             const rChave = chavesGlobais[Math.floor(Math.random() * chavesGlobais.length)];
             const rFato = bancoCuriosidades[rChave][Math.floor(Math.random() * bancoCuriosidades[rChave].length)];
