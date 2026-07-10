@@ -1,9 +1,14 @@
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
-    const sender = msg.key.participant || msg.key.remoteJid;
+    let sender = msg.key.participant || msg.key.remoteJid;
+
+    // Remove qualquer ID de dispositivo ou sufixo extra (Evita o erro de não reconhecer dono)
+    if (sender && sender.includes(':')) {
+        sender = sender.split(':')[0] + '@s.whatsapp.net';
+    }
 
     // ══════════════════════════════════════════════════════════════
-    // ⚠️ ATENÇÃO OLDEN: VEJA O SEU NÚMERO ABAIXO. ALTERE APENAS SE MUDAR DE WHATSAPP.
+    // ⚠️ CONFIGURAÇÃO DO ID DO DONO
     // ══════════════════════════════════════════════════════════════
     const DONO_OFICIAL = '258877080511@s.whatsapp.net'; 
 
@@ -13,6 +18,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     }
 
     switch (comando) {
+        // Correção: Adicionado o painel para o comando !menudono responder
+        case 'menudono':
+            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot-:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!reiniciar* ➔ Reiniciar buffers e contêineres do Railway.\n\n💰 *💳 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!addcelestial [@membro]* ➔ Conceder o título divino Celestial.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Golds.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto [URL]* ➔ Modificar a imagem oficial do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n░▒▓█████████████████████████████████████▓▒░`;
+            await sock.sendMessage(from, { text: textoMenuDono }, { quoted: msg });
+            break;
+
         case 'manutencao':
             if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
                 return sock.sendMessage(from, { text: "🌊 Use: *!manutencao on* ou *!manutencao off* 💧" }, { quoted: msg });
@@ -23,7 +34,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'burlar':
-            // Inicialização de segurança caso o dono não esteja no banco de dados
             if (!db.usuarios[sender]) db.usuarios[sender] = { golds: 100, banco: 0, trabalhos_hoje: 0, mineracoes_hoje: 0 };
             db.usuarios[sender].trabalhos_hoje = 0;
             db.usuarios[sender].mineracoes_hoje = 0;
@@ -75,7 +85,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             
             if (!db.usuarios[alvoCel]) db.usuarios[alvoCel] = { golds: 100, banco: 0 };
             db.usuarios[alvoCel].titulo_1 = "🌌 Celestial 💎";
-            db.usuarios[alvoCel].data_expiracao = Date.now() + 604800000; // 1 semana de duração estável
+            db.usuarios[alvoCel].data_expiracao = Date.now() + 604800000; 
             salvarDB(db);
             await sock.sendMessage(from, { text: `🌌 *DECRETO REAL:* @${alvoCel.split('@')[0]} foi coroado com o título de prestígio *Celestial* por Olden!`, mentions: [alvoCel] }, { quoted: msg });
             break;
@@ -105,7 +115,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
         case 'reiniciar':
             await sock.sendMessage(from, { text: "🔄 Reiniciando containers e limpando buffers no Railway... Volto em 5 segundos!" }, { quoted: msg });
-            process.exit(0); // O Railway reinicia o processo automaticamente de forma limpa
+            process.exit(0);
             break;
 
         case 'desligar':
