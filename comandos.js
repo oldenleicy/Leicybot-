@@ -16,8 +16,13 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         if (!msg.message) return;
 
         const from = msg.key.remoteJid;
-        const sender = msg.key.participant || msg.key.remoteJid;
+        let sender = msg.key.participant || msg.key.remoteJid;
         
+        // 🛠️ CORREÇÃO CRÍTICA: Limpa o ID do remetente na raiz de execução
+        if (sender && sender.includes(':')) {
+            sender = sender.split(':')[0] + '@s.whatsapp.net';
+        }
+
         // Captura o texto de forma ampla e segura
         const corpoMensagem = msg.message.conversation || 
                              msg.message.extendedTextMessage?.text || 
@@ -69,12 +74,11 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         // 🌊 COMANDO PRINCIPAL EXPANSO: !menu / !help
         if (comandoUnico === 'menu' || comandoUnico === 'help') {
             const fotoOficial = db.config_bot.url_foto_menu || "https://i.imgur.com/Kdf946S.png";
-            const textoMenuGeral = `░▒▓█████████████████████████████████████▓▒░\n▓██          🌊  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗘𝗡𝗨  💧         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🤖 Olá! Eu sou o Leicybot-. Escolha uma das centrais de comando abaixo digitando o comando correspondente:\n\n💳 *!menugold* ➔ Painel de Economia, Banco e Lojas Virtuais.\n🛡️ *!menuadm* ➔ Ferramentas de Moderação e Defesa de Grupo.\n🎮 *!menujogos* ➔ Jogos Sociais, Duelos e Entretenimento.\n🎵 *!menumidia* ➔ Criação de Figurinhas, Buscas e Downloads.\n👑 *!menudono* ➔ Painel Administrativo de Desenvolvedor.\n\n📖 *💡 DICA SUPREMA:* Ficou com dúvidas sobre algum comando específico? Digite: *!ajuda [nome_do_comando]*\n\n📋 𝗟𝗜𝗦𝗧𝗔 𝗖𝗢𝗠𝗣𝗟𝗘𝗧𝗔 𝗗𝗘 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦:\n\n🔹 *ECONOMIA:* gold, saldo, carteira, trabalhar, minerar, assaltar, banco, pagar, rankgold, loja, comprar, vendertitulo, apresentacao.\n\n🔹 *MODERAÇÃO:* ban, kick, promover, rebaixar, antilink, antilink2, fakes, grupo, limpar, marcar, adms, setregras, regras, atividade, online, setwelcome1, setwelcome2, setwelcome3, bv1, bv2, bv3.\n\n🔹 *DIVERSÃO:* duelo, casar, aceitar, divorciar, beijar, bater, abracar, gado, gostoso, curiosidade.\n\n🔹 *MÍDIA & BUSCAS:* sticker, s, copiarsticker, anime, clima, google.\n\n🔹 *DONO/DEV:* manutencao, burlar, desativarcmd, ativarcmd, addgold, remgold, addcelestial, setfoto, nomebot, limpardb, transmitir, reiniciar, desligar.\n░▒▓█████████████████████████████████████▓▒░`;
+            const textoMenuGeral = `░▒▓█████████████████████████████████████▓▒░\n▓██          🌊  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠menu  💧         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🤖 Olá! Eu sou o Leicybot-. Escolha uma das centrais de comando abaixo digitando o comando correspondente:\n\n💳 *!menugold* ➔ Painel de Economia, Banco e Lojas Virtuais.\n🛡️ *!menuadm* ➔ Ferramentas de Moderação e Defesa de Grupo.\n🎮 *!menujogos* ➔ Jogos Sociais, Duelos e Entretenimento.\n🎵 *!menumidia* ➔ Criação de Figurinhas, Buscas e Downloads.\n👑 *!menudono* ➔ Painel Administrativo de Desenvolvedor.\n\n📖 *💡 DICA SUPREMA:* Ficou com dúvidas sobre algum comando específico? Digite: *!ajuda [nome_do_comando]*\n\n📋 𝗟𝗜𝗦𝗧𝗔 𝗖𝗢𝗠𝗣𝗟𝗘𝗧𝗔 𝗗𝗘 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦:\n\n🔹 *ECONOMIA:* gold, saldo, carteira, trabalhar, minerar, assaltar, banco, pagar, rankgold, loja, comprar, vendertitulo, apresentacao.\n\n🔹 *MODERAÇÃO:* ban, kick, promover, rebaixar, antilink, antilink2, fakes, grupo, limpar, marcar, adms, setregras, regras, atividade, online, setwelcome1, setwelcome2, setwelcome3, bv1, bv2, bv3, boasvindas.\n\n🔹 *DIVERSÃO:* duelo, casar, aceitar, divorciar, beijar, bater, abracar, gado, gostoso, curiosidade.\n\n🔹 *MÍDIA & BUSCAS:* sticker, s, copiarsticker, anime, clima, google.\n\n🔹 *DONO/DEV:* manutencao, burlar, desativarcmd, ativarcmd, addgold, remgold, addcelestial, setfoto, nomebot, limpardb, transmitir, reiniciar, desligar.\n░▒▓█████████████████████████████████████▓▒░`;
             
             try {
                 return await sock.sendMessage(from, { image: { url: fotoOficial }, caption: textoMenuGeral }, { quoted: msg });
             } catch (e) {
-                // Envio alternativo caso a URL da foto falhe/esteja quebrada
                 return await sock.sendMessage(from, { text: textoMenuGeral }, { quoted: msg });
             }
         }
@@ -97,7 +101,7 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             return await executarEconomia(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
-        const cmdsAdm = ['menuadm', 'ban', 'kick', 'promover', 'rebaixar', 'antilink', 'antilink2', 'fakes', 'grupo', 'limpar', 'marcar', 'adms', 'setregras', 'regras', 'setwelcome1', 'setwelcome2', 'setwelcome3', 'bv1', 'bv2', 'bv3', 'atividade', 'online'];
+        const cmdsAdm = ['menuadm', 'ban', 'kick', 'promover', 'rebaixar', 'antilink', 'antilink2', 'fakes', 'grupo', 'limpar', 'marcar', 'adms', 'setregras', 'regras', 'setwelcome1', 'setwelcome2', 'setwelcome3', 'bv1', 'bv2', 'bv3', 'atividade', 'online', 'boasvindas'];
         if (cmdsAdm.includes(comandoUnico)) {
             const executarAdm = admModulo.admModulo || admModulo.default || admModulo;
             return await executarAdm(sock, msg, comandoUnico, argumentos, db, salvarDB);
