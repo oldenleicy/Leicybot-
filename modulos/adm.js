@@ -1,13 +1,18 @@
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
-    const sender = msg.key.participant || msg.key.remoteJid;
+    let sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = from.endsWith('@g.us');
 
     if (!isGroup) {
         return sock.sendMessage(from, { text: "❌ Este comando só pode ser executado dentro de grupos! 🌊" }, { quoted: msg });
     }
 
-    // Obter metadados do grupo para validar se quem executa é Administrador
+    // Limpeza de ID de dispositivo no sender para garantir validação de ADM
+    if (sender && sender.includes(':')) {
+        sender = sender.split(':')[0] + '@s.whatsapp.net';
+    }
+
+    // Obter metadados do grupo para validar administradores
     const groupMetadata = await sock.groupMetadata(from);
     const participants = groupMetadata.participants;
     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
@@ -22,8 +27,10 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     }
 
     // Inicializar configurações do grupo no DB caso não existam
+    if (!db.grupos) db.grupos = {};
     if (!db.grupos[from]) {
         db.grupos[from] = {
+            boasvindas: false, // Nova chave adicionada para o comando funcionar
             antilink: false,
             antilink2: false,
             fakes: false,
@@ -40,6 +47,16 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'menuadm':
             const menuAdmTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🛡️  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗢𝗗𝗘𝗥𝗔𝗖𝗔𝗢  🛡️      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Ferramentas de contenção e segurança activa.\n\n ➔ *!ban / !kick [@user]* - Remove um infrator.\n ➔ *!promover [@user]* - Concede privilégios de ADM.\n ➔ *!rebaixar [@user]* - Retira privilégios de ADM.\n ➔ *!antilink [on/off]* - Apaga links comuns enviadas.\n ➔ *!antilink2 [on/off]* - Deleta link e bane o membro.\n ➔ *!fakes [on/off]* - Expulsa números gringos (+ de 1 DDI).\n ➔ *!grupo [abrir/fechar]* - Altera permissões do chat.\n ➔ *!limpar* - Limpa o histórico de exibição do chat.\n ➔ *!marcar* - Menciona todos os integrantes de uma vez.\n ➔ *!adms* - Chama a equipe técnica de ADMs.\n ➔ *!setregras [texto]* - Define o estatuto interno.\n ➔ *!regras* - Exibe as normas atuais salvas.\n ➔ *!boasvindas [on/off]* - Liga/Desliga o sistema de saudações.\n ➔ *!setwelcome1 / 2 / 3 [texto]* - Modifica os slots de BV.\n ➔ *!bv1 / !bv2 / !bv3* - Escolhe qual modelo fica ativo.\n ➔ *!atividade* - Exibe ranking de mensagens enviadas.\n ➔ *!online* - Lista membros que interagiram recentemente.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuAdmTxt }, { quoted: msg });
+            break;
+
+        // Comando Corrigido: !boasvindas agora ativo no switch
+        case 'boasvindas':
+            if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
+                return sock.sendMessage(from, { text: "🌊 Use: *!boasvindas on* ou *!boasvindas off*" }, { quoted: msg });
+            }
+            gConfig.boasvindas = args[0] === 'on';
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `👋 Sistema de *Boas-Vindas* definido como: *${args[0].toUpperCase()}*.` }, { quoted: msg });
             break;
 
         case 'ban':
@@ -132,7 +149,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'regras':
-            // Correção: Resolvido o erro de fechamento de string que causava o travamento completo do arquivo
             const regrasTxt = `╔═══════════════════════════════════════╗\n          📜  𝗡𝗢𝗥𝗠𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  📜\n╚═══════════════════════════════════════╝\n\n ${gConfig.regras || "Nenhuma regra cadastrada ainda."}\n\n─────────────────────────────────────────\n 🌊 Evite punições, colabore com o grupo! 💧\n╚═══════════════════════════════════════╝`;
             await sock.sendMessage(from, { text: regrasTxt }, { quoted: msg });
             break;
@@ -156,7 +172,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'atividade':
-            // Correção preventiva contra valores nulos/undefined (evitando bugs de NaN)
             let membrosAtividade = Object.keys(db.usuarios).map(id => {
                 return { id, msgCont: db.usuarios[id].mensagens_contadas || 0 };
             }).sort((a, b) => b.msgCont - a.msgCont).slice(0, 15);
@@ -169,7 +184,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'online':
-            // Correção para filtrar apenas usuários válidos evitando falhas se mensagens_contadas for indefinido
             let onlineFiltrados = Object.keys(db.usuarios).filter(id => (db.usuarios[id].mensagens_contadas || 0) > 5).slice(0, 20);
             let onTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🟢  𝗠𝗘𝗠𝗕𝗥𝗢𝗦 𝗔𝗧𝗜𝗩𝗢𝗦 𝗡𝗢 𝗖𝗛𝗔𝗧  🟢      ██▓\n░▒▓█████████████████████████████████████▓▒░\n🌊 Integrantes em atividade recente verificada:\n\n`;
             onlineFiltrados.forEach(id => {
