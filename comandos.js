@@ -9,7 +9,8 @@ const admModulo = require('./modulos/adm');
 const diversaoModulo = require('./modulos/diversao');
 const midiaModulo = require('./modulos/midia');
 
-// Definição da função de tratamento de comandos
+const DONO_OFICIAL = '258877080511@s.whatsapp.net';
+
 const lidarComComando = async (sock, msg, db, salvarDB) => {
     try {
         if (!msg.message) return;
@@ -23,7 +24,7 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
                              msg.message.imageMessage?.caption || 
                              msg.message.videoMessage?.caption || "";
 
-        // Inicialização preventiva do banco de dados para evitar travar o escopo
+        // Inicialização preventiva do banco de dados
         if (!db) db = { usuarios: {}, grupos: {}, config_bot: {} };
         if (!db.usuarios) db.usuarios = {};
         if (!db.config_bot) db.config_bot = { url_foto_menu: "https://i.imgur.com/Kdf946S.png", manutencao: false, comandos_desativados: [] };
@@ -55,8 +56,8 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         db.usuarios[sender].mensagens_contadas = (db.usuarios[sender].mensagens_contadas || 0) + 1;
         salvarDB(db);
 
-        // Verificação: Modo Manutenção Global
-        if (db.config_bot.manutencao && sender !== '258877080511@s.whatsapp.net') {
+        // Verificação: Modo Manutenção Global (Apenas o Dono passa)
+        if (db.config_bot.manutencao && sender !== DONO_OFICIAL) {
             return sock.sendMessage(from, { text: "⚠️ *MANUTENÇÃO:* Meus sistemas estão sendo calibrados pelo chefe *Olden*. Volto em breve! 🌊" }, { quoted: msg });
         }
 
@@ -70,10 +71,12 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             const fotoOficial = db.config_bot.url_foto_menu || "https://i.imgur.com/Kdf946S.png";
             const textoMenuGeral = `░▒▓█████████████████████████████████████▓▒░\n▓██          🌊  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗘𝗡𝗨  💧         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🤖 Olá! Eu sou o Leicybot-. Escolha uma das centrais de comando abaixo digitando o comando correspondente:\n\n💳 *!menugold* ➔ Painel de Economia, Banco e Lojas Virtuais.\n🛡️ *!menuadm* ➔ Ferramentas de Moderação e Defesa de Grupo.\n🎮 *!menujogos* ➔ Jogos Sociais, Duelos e Entretenimento.\n🎵 *!menumidia* ➔ Criação de Figurinhas, Buscas e Downloads.\n👑 *!menudono* ➔ Painel Administrativo de Desenvolvedor.\n\n📖 *💡 DICA SUPREMA:* Ficou com dúvidas sobre algum comando específico? Digite: *!ajuda [nome_do_comando]*\n\n📋 𝗟𝗜𝗦𝗧𝗔 𝗖𝗢𝗠𝗣𝗟𝗘𝗧𝗔 𝗗𝗘 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦:\n\n🔹 *ECONOMIA:* gold, saldo, carteira, trabalhar, minerar, assaltar, banco, pagar, rankgold, loja, comprar, vendertitulo, apresentacao.\n\n🔹 *MODERAÇÃO:* ban, kick, promover, rebaixar, antilink, antilink2, fakes, grupo, limpar, marcar, adms, setregras, regras, atividade, online, setwelcome1, setwelcome2, setwelcome3, bv1, bv2, bv3.\n\n🔹 *DIVERSÃO:* duelo, casar, aceitar, divorciar, beijar, bater, abracar, gado, gostoso, curiosidade.\n\n🔹 *MÍDIA & BUSCAS:* sticker, s, copiarsticker, anime, clima, google.\n\n🔹 *DONO/DEV:* manutencao, burlar, desativarcmd, ativarcmd, addgold, remgold, addcelestial, setfoto, nomebot, limpardb, transmitir, reiniciar, desligar.\n░▒▓█████████████████████████████████████▓▒░`;
             
-            return await sock.sendMessage(from, { 
-                image: { url: fotoOficial }, 
-                caption: textoMenuGeral 
-            }, { quoted: msg });
+            try {
+                return await sock.sendMessage(from, { image: { url: fotoOficial }, caption: textoMenuGeral }, { quoted: msg });
+            } catch (e) {
+                // Envio alternativo caso a URL da foto falhe/esteja quebrada
+                return await sock.sendMessage(from, { text: textoMenuGeral }, { quoted: msg });
+            }
         }
 
         // 🛑 COMANDO UNIVERSAL: !ajuda [comando]
