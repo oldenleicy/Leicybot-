@@ -7,7 +7,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         return sock.sendMessage(from, { text: "❌ Este comando só pode ser executado dentro de grupos! 🌊" }, { quoted: msg });
     }
 
-    // Limpeza de ID de dispositivo no sender para garantir validação de ADM
+    // Sincronização da higienização do remetente
     if (sender && sender.includes(':')) {
         sender = sender.split(':')[0] + '@s.whatsapp.net';
     }
@@ -21,7 +21,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const isAdmin = adms.includes(sender);
     const botIsAdmin = adms.includes(botId);
 
-    // Permissões exclusivas de Administradores do Grupo
+    // Validação estrita de administrador
     if (!isAdmin) {
         return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Este comando é exclusivo para os Administradores do grupo! 🛡️" }, { quoted: msg });
     }
@@ -30,7 +30,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     if (!db.grupos) db.grupos = {};
     if (!db.grupos[from]) {
         db.grupos[from] = {
-            boasvindas: false, // Nova chave adicionada para o comando funcionar
+            boasvindas: false,
             antilink: false,
             antilink2: false,
             fakes: false,
@@ -49,7 +49,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             await sock.sendMessage(from, { text: menuAdmTxt }, { quoted: msg });
             break;
 
-        // Comando Corrigido: !boasvindas agora ativo no switch
         case 'boasvindas':
             if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
                 return sock.sendMessage(from, { text: "🌊 Use: *!boasvindas on* ou *!boasvindas off*" }, { quoted: msg });
