@@ -5,7 +5,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
         const from = msg.key.remoteJid;
         let sender = msg.key.participant || msg.key.remoteJid;
 
-        // 🛠️ Limpa o ID do remetente para consistência multi-device
+        // Limpa o ID do remetente para consistência multi-device
         if (sender && sender.includes(':')) {
             sender = sender.split(':')[0] + '@s.whatsapp.net';
         }
@@ -45,19 +45,16 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
         // Estrutura fixa de títulos com preços, raridades e limites
         const catálogoTítulos = {
-            // Lendários (3000g)
             'luasuperior1': { nome: "🔴 Lua Superior 1", preco: 3000, raridade: "Lendario" },
             'pecadoganancia': { nome: "🔴 Pecado da Ganância", preco: 3000, raridade: "Lendario" },
             'reipiratas': { nome: "🔴 Rei dos Piratas", preco: 3000, raridade: "Lendario" },
             'vingadorhogwarts': { nome: "🔴 Vingador de Hogwarts", preco: 3000, raridade: "Lendario" },
             'donodabanca': { nome: "🔴 Dono da Banca", preco: 3000, raridade: "Lendario" },
-            // Ouro (1500g)
             'luasuperior2': { nome: "🟡 Lua Superior 2", preco: 1500, raridade: "Ouro" },
             'luasuperior3': { nome: "🟡 Lua Superior 3", preco: 1500, raridade: "Ouro" },
             'supersaiyajin': { nome: "🟡 Super Saiyajin", preco: 1500, raridade: "Ouro" },
             'chefedehawkins': { nome: "🟡 Chefe de Hawkins", preco: 1500, raridade: "Ouro" },
             'hereditariajoseon': { nome: "🟡 Realeza de Joseon", preco: 1500, raridade: "Ouro" },
-            // Prata / Bronze (500g)
             'luainferior1': { nome: "⚪ Lua Inferior 1", preco: 500, raridade: "Prata" },
             'luainferior2': { nome: "⚪ Lua Inferior 2", preco: 500, raridade: "Prata" },
             'luainferior3': { nome: "⚪ Lua Inferior 3", preco: 500, raridade: "Prata" },
@@ -86,7 +83,6 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             return contagem;
         };
 
-        // Sincroniza e limpa as energias se mudar o dia
         const hojeData = new Date().toLocaleDateString();
         if (u.ultimo_mensagem_data !== hojeData) {
             u.trabalhos_hoje = 0;
@@ -245,11 +241,11 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 }
 
                 if (itemAlvo === 'apresentacaobuy') {
-                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { quoted: msg });
+                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { relocation: true });
                     u.golds -= 100;
                     u.apresentacao = true;
                     salvarDB(db);
-                    return sock.sendMessage(from, { text: "📢 *APRESENTAÇÃO ATIVADA:* Seus títulos cadastrados serão anunciados de forma imponente a cada 3 horas sempre que você enviar uma mensagem comum! Validado por 1 semana." }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "📢 *APRESENTAÇÃO ATIVADA:* Seus títulos cadastrados serão anunciados sempre que interagir! Validado por 1 semana." }, { quoted: msg });
                 }
 
                 const itemTitulo = catálogoTítulos[itemAlvo];
@@ -259,7 +255,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
                 let limitesRaridade = { "Lendario": 1, "Ouro": 5, "Prata": 15 };
                 if (contarDonosRaridade(itemTitulo.raridade) >= limitesRaridade[itemTitulo.raridade]) {
-                    return sock.sendMessage(from, { text: `❌ Vagas esgotadas no grupo para títulos de nível *${itemTitulo.raridade}*! Aguarde alguém vender ou expirar.` }, { quoted: msg });
+                    return sock.sendMessage(from, { text: `❌ Vagas esgotadas no grupo para títulos de nível *${itemTitulo.raridade}*! Aguarde alguém vender.` }, { quoted: msg });
                 }
 
                 if (u.titulo_1 === itemTitulo.nome || u.titulo_2 === itemTitulo.nome) {
@@ -271,13 +267,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 } else if (!u.titulo_2) {
                     u.titulo_2 = itemTitulo.nome;
                 } else {
-                    return sock.sendMessage(from, { text: "❌ Inventário cheio! Você já acumula o limite máximo de 2 títulos simultâneos. Use *!vendertitulo* para esvaziar um slot." }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "❌ Inventário cheio! Limite máximo de 2 títulos simultâneos. Use *!vendertitulo*." }, { quoted: msg });
                 }
 
                 u.golds -= itemTitulo.preco;
                 u.data_expiracao = Date.now() + 604800000; 
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `🎉 *COMPRA EFETUADA:* Você adquiriu com orgulho o título *${itemTitulo.nome}* por 1 semana! Use com sabedoria. 🌊` }, { quoted: msg });
+                await sock.sendMessage(from, { text: `🎉 *COMPRA EFETUADA:* Você adquiriu o título *${itemTitulo.nome}* por 1 semana! 🌊` }, { quoted: msg });
                 break;
 
             case 'vendertitulo':
@@ -285,11 +281,10 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 u.titulo_2 = null;
                 u.data_expiracao = null;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: "🎭 Slots de títulos redefinidos com sucesso. Vagas liberadas no mercado do grupo! 💧" }, { quoted: msg });
+                await sock.sendMessage(from, { text: "🎭 Slots de títulos redefinidos com sucesso. Vagas liberadas! 💧" }, { quoted: msg });
                 break;
 
             case 'apresentacao':
-                // 🛡️ REFORÇO CRÍTICO DE SEGURANÇA: reconecta instantaneamente ao db se a variável estiver inconsistente
                 if (!u) {
                     if (!db.usuarios[sender]) {
                         db.usuarios[sender] = { golds: 100, banco: 0, apresentacao: false };
@@ -297,4 +292,9 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     u = db.usuarios[sender];
                 }
 
-                if (!args[0] || (arg
+                if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
+                    return sock.sendMessage(from, { text: "🌊 Use: *!apresentacao on* ou *!apresentacao off* para alternar os anúncios!" }, { quoted: msg });
+                }
+                u.apresentacao = args[0] === 'on';
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `📢 Anúncio automático de títulos definido para: *${args[0].toUpperCase()}*.` }, { q
