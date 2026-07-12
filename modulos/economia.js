@@ -10,7 +10,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             sender = sender.split(':')[0] + '@s.whatsapp.net';
         }
 
-        // Inicialização preventiva e abrangente do usuário no banco de dados
+        // Inicialização preventiva do usuário no banco de dados
         if (!db.usuarios) db.usuarios = {};
         if (!db.usuarios[sender]) {
             db.usuarios[sender] = { 
@@ -36,14 +36,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             };
         }
 
-        // Define a variável de atalho apontando diretamente para o banco
         let u = db.usuarios[sender];
 
-        // Garantia extra de propriedades de controle diário
+        // Garantia de propriedades de controle diário
         if (u.trabalhos_hoje === undefined) u.trabalhos_hoje = 0;
         if (u.mineracoes_hoje === undefined) u.mineracoes_hoje = 0;
 
-        // Estrutura fixa de títulos com preços, raridades e limites
+        // Estrutura fixa de títulos com preços e raridades
         const catálogoTítulos = {
             'luasuperior1': { nome: "🔴 Lua Superior 1", preco: 3000, raridade: "Lendario" },
             'pecadoganancia': { nome: "🔴 Pecado da Ganância", preco: 3000, raridade: "Lendario" },
@@ -100,7 +99,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             case 'gold':
             case 'saldo':
             case 'carteira':
-                const goldTxt = `╔═══════════════════════════════════════╗\n         💳  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  💳\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${sender.split('@')[0]}\n 💳 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${u.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${u.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱𝗼: [${u.escudo ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${u.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟭: ${u.titulo_1 || 'Nenhum'}\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟮: ${u.titulo_2 || 'Nenhum'}\n ⏳ 𝗘𝘅𝗽𝗶𝗿𝗮𝗰̧𝗮̃𝗼: ${u.data_expiracao ? 'Ativa por 1 semana' : 'Sem prazo'}\n─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${u.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${u.mineracoes_hoje}/5)\n╚═══════════════════════════════════════╝`;
+                const goldTxt = `╔═══════════════════════════════════════╗\n         💳  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  💳\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${sender.split('@')[0]}\n 💳 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${u.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${u.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱ο: [${u.escudo ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${u.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟭: ${u.titulo_1 || 'Nenhum'}\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟮: ${u.titulo_2 || 'Nenhum'}\n ⏳ 𝗘𝘅𝗽𝗶𝗿𝗮𝗰̧𝗮̃𝗼: ${u.data_expiracao ? 'Ativa por 1 semana' : 'Sem prazo'}\n─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${u.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${u.mineracoes_hoje}/5)\n╚═══════════════════════════════════════╝`;
                 await sock.sendMessage(from, { text: goldTxt, mentions: [sender] }, { quoted: msg });
                 break;
 
@@ -213,7 +212,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     return { id, total: (db.usuarios[id].golds || 0) + (db.usuarios[id].banco || 0) };
                 }).sort((a, b) => b.total - a.total).slice(0, 10);
 
-                let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢package 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
+                let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢𝗣 𝟭𝟬 - 𝗠𝗔𝗚package𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
                 const medalhas = ["🥇", "🥈", "🥉", "💧", "💧", "💧", "💧", "💧", "💧", "💧"];
                 ordenados.forEach((m, idx) => {
                     rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 💳 *${m.total} Golds*\n`;
@@ -241,7 +240,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 }
 
                 if (itemAlvo === 'apresentacaobuy') {
-                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { relocation: true });
+                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { quoted: msg });
                     u.golds -= 100;
                     u.apresentacao = true;
                     salvarDB(db);
@@ -297,4 +296,10 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 }
                 u.apresentacao = args[0] === 'on';
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `📢 Anúncio automático de títulos definido para: *${args[0].toUpperCase()}*.` }, { q
+                await sock.sendMessage(from, { text: `📢 Anúncio automático de títulos definido para: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+                break;
+
+            default:
+                break;
+        }
+    } catch (erro
