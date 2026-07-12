@@ -1,10 +1,37 @@
 {
-  "usuarios": {},
+  "usuarios": {
+    "exemplo_modelo_usuario@s.whatsapp.net": {
+      "golds": 100,
+      "banco": 0,
+      "mensagens_contadas": 0,
+      "ultimo_mensagem_data": "",
+      "bio": "Nenhuma descrição definida ainda. Use !setbio",
+      "idade": "Não informada",
+      "estado_civil": "Solteiro(a)",
+      "casamentos_total": 0,
+      "advertencias": [],
+      "titulos_criados": [],
+      "titulo_especial": null,
+      "titulo_1": null,
+      "titulo_2": null,
+      "apresentacao": false,
+      "permissoes_especiais": [],
+      "trabalhos_hoje": 0,
+      "mineracoes_hoje": 0,
+      "escudo": false,
+      "data_expiracao": null
+    }
+  },
   "grupos": {},
   "config_bot": {
     "nome_bot": "LeicyBot",
     "url_foto_menu": "https://i.imgur.com/Kdf946S.png",
     "manutencao": false,
-    "comandos_desativados": []
+    "comandos_desativados": [],
+    "titulos_criados": [
+      "Celestial",
+      "4Espadas⚔️🌊",
+      "Gavião da noite"
+    ]
   }
 }
