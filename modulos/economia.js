@@ -5,12 +5,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
         const from = msg.key.remoteJid;
         let sender = msg.key.participant || msg.key.remoteJid;
 
-        // 🛠️ CORREÇÃO CRÍTICA: Limpa o ID do remetente para consistência multi-device
+        // 🛠️ Limpa o ID do remetente para consistência multi-device
         if (sender && sender.includes(':')) {
             sender = sender.split(':')[0] + '@s.whatsapp.net';
         }
 
         // Inicialização preventiva e abrangente do usuário no banco de dados
+        if (!db.usuarios) db.usuarios = {};
         if (!db.usuarios[sender]) {
             db.usuarios[sender] = { 
                 golds: 100, 
@@ -24,20 +25,21 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 advertencias: [],
                 titulos_criados: [],
                 titulo_especial: null,
+                titulo_1: null,
+                titulo_2: null,
+                apresentacao: false,
                 permissoes_especiais: [],
                 trabalhos_hoje: 0,
                 mineracoes_hoje: 0,
                 escudo: false,
-                apresentacao: false,
-                titulo_1: null,
-                titulo_2: null,
                 data_expiracao: null
             };
         }
 
+        // Define a variável de atalho apontando diretamente para o banco
         let u = db.usuarios[sender];
 
-        // Garantia de propriedades de controle diário
+        // Garantia extra de propriedades de controle diário
         if (u.trabalhos_hoje === undefined) u.trabalhos_hoje = 0;
         if (u.mineracoes_hoje === undefined) u.mineracoes_hoje = 0;
 
@@ -75,7 +77,6 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             return encontrado ? encontrado.raridade : null;
         };
 
-        // Função auxiliar para contar quantos usuários possuem uma determinada raridade no grupo
         const contarDonosRaridade = (raridade) => {
             let contagem = 0;
             Object.values(db.usuarios).forEach(user => {
@@ -103,13 +104,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             case 'gold':
             case 'saldo':
             case 'carteira':
-                const goldTxt = `╔═══════════════════════════════════════╗\n         💳  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  💳\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${sender.split('@')[0]}\n 💳 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${u.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰𝗼: ${u.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱𝗼: [${u.escudo ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${u.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟭: ${u.titulo_1 || 'Nenhum'}\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟮: ${u.titulo_2 || 'Nenhum'}\n ⏳ 𝗘𝘅𝗽𝗶𝗿𝗮𝗰̧𝗮̃𝗼: ${u.data_expiracao ? 'Ativa por 1 semana' : 'Sem prazo'}\n─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${u.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${u.mineracoes_hoje}/5)\n╚═══════════════════════════════════════╝`;
+                const goldTxt = `╔═══════════════════════════════════════╗\n         💳  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  💳\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${sender.split('@')[0]}\n 💳 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${u.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${u.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱𝗼: [${u.escudo ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${u.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟭: ${u.titulo_1 || 'Nenhum'}\n 🎭 𝗧𝗶́𝘁𝘂𝗹𝗼 𝟮: ${u.titulo_2 || 'Nenhum'}\n ⏳ 𝗘𝘅𝗽𝗶𝗿𝗮𝗰̧𝗮̃𝗼: ${u.data_expiracao ? 'Ativa por 1 semana' : 'Sem prazo'}\n─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${u.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${u.mineracoes_hoje}/5)\n╚═══════════════════════════════════════╝`;
                 await sock.sendMessage(from, { text: goldTxt, mentions: [sender] }, { quoted: msg });
                 break;
 
             case 'trabalhar':
                 if (u.trabalhos_hoje >= 5) return sock.sendMessage(from, { text: "🌊 Energia esgotada! Você já atingiu seu limite diário de 5 trabalhos. Volte amanhã! 💧" }, { quoted: msg });
-                const ganhoTrab = Math.floor(Math.random() * 41) + 40; // 40 a 80 Golds
+                const ganhoTrab = Math.floor(Math.random() * 41) + 40; 
                 u.golds += ganhoTrab;
                 u.trabalhos_hoje += 1;
                 salvarDB(db);
@@ -122,12 +123,12 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 
                 const sorte = Math.random();
                 if (sorte > 0.4) {
-                    const ganhoMin = Math.floor(Math.random() * 101) + 50; // 50 a 150
+                    const ganhoMin = Math.floor(Math.random() * 101) + 50; 
                     u.golds += ganhoMin;
                     salvarDB(db);
                     await sock.sendMessage(from, { text: `⛏️ *💥 MINERAÇÃO DE SUCESSO:* Você encontrou cristais aquáticos na caverna e garantiu *${ganhoMin} Golds*! 🌊` }, { quoted: msg });
                 } else {
-                    const perdaMin = Math.floor(Math.random() * 41) + 20; // 20 a 60
+                    const perdaMin = Math.floor(Math.random() * 41) + 20; 
                     u.golds = Math.max(0, u.golds - perdaMin);
                     salvarDB(db);
                     await sock.sendMessage(from, { text: `⛏️ *⚠️ DESABAMENTO:* A caverna estremeceu e você perdeu *${perdaMin} Golds* em equipamentos quebrados! 💧` }, { quoted: msg });
@@ -153,13 +154,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
                 if (vitima.escudo) {
                     vitima.escudo = false;
-                    u.golds = Math.max(0, u.golds - 300); // Multa pesada
+                    u.golds = Math.max(0, u.golds - 300); 
                     salvarDB(db);
                     return sock.sendMessage(from, { text: `🛡️ *💥 ESCUDO ATIVADO:* O escudo antirroubo de @${alvoAssalto.split('@')[0]} quebrou o seu ataque! Você foi pego pelas patrulhas de Olden e multado em *300 Golds*.`, mentions: [alvoAssalto] }, { quoted: msg });
                 }
 
                 if (Math.random() > 0.5) {
-                    const roubado = Math.floor((vitima.golds || 0) * 0.3); // Rouba 30% do dinheiro em mãos
+                    const roubado = Math.floor((vitima.golds || 0) * 0.3); 
                     vitima.golds -= roubado;
                     u.golds += roubado;
                     salvarDB(db);
@@ -216,7 +217,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     return { id, total: (db.usuarios[id].golds || 0) + (db.usuarios[id].banco || 0) };
                 }).sort((a, b) => b.total - a.total).slice(0, 10);
 
-                let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢𝗣 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
+                let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢package 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
                 const medalhas = ["🥇", "🥈", "🥉", "💧", "💧", "💧", "💧", "💧", "💧", "💧"];
                 ordenados.forEach((m, idx) => {
                     rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 💳 *${m.total} Golds*\n`;
@@ -274,7 +275,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 }
 
                 u.golds -= itemTitulo.preco;
-                u.data_expiracao = Date.now() + 604800000; // Validade rígida estrita de 1 semana
+                u.data_expiracao = Date.now() + 604800000; 
                 salvarDB(db);
                 await sock.sendMessage(from, { text: `🎉 *COMPRA EFETUADA:* Você adquiriu com orgulho o título *${itemTitulo.nome}* por 1 semana! Use com sabedoria. 🌊` }, { quoted: msg });
                 break;
@@ -288,7 +289,12 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 break;
 
             case 'apresentacao':
-                if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
-                    return sock.sendMessage(from, { text: "🌊 Use: *!apresentacao on* ou *!apresentacao off* para alternar os anúncios!" }, { quoted: msg });
+                // 🛡️ REFORÇO CRÍTICO DE SEGURANÇA: reconecta instantaneamente ao db se a variável estiver inconsistente
+                if (!u) {
+                    if (!db.usuarios[sender]) {
+                        db.usuarios[sender] = { golds: 100, banco: 0, apresentacao: false };
+                    }
+                    u = db.usuarios[sender];
                 }
-                u.apresentacao = args[0] === 'on';
+
+                if (!args[0] || (arg
