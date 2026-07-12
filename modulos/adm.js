@@ -1,4 +1,4 @@
-module.exports = async (sock, msg, comando, args, db, salvarDB) => {
+module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoComando = false) => {
     const from = msg.key.remoteJid;
     let sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = from.endsWith('@g.us');
@@ -21,9 +21,9 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const isAdmin = adms.includes(sender);
     const botIsAdmin = adms.includes(botId);
 
-    // Validação estrita de administrador
-    if (!isAdmin) {
-        return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Este comando é exclusivo para os Administradores do grupo! 🛡️" }, { quoted: msg });
+    // Validação estrita de administrador OU permissão especial concedida pelo dono
+    if (!isAdmin && !possuiPermissaoComando) {
+        return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Este comando é exclusivo para os Administradores do grupo ou membros autorizados! 🛡️" }, { quoted: msg });
     }
 
     // Inicializar configurações do grupo no DB caso não existam
@@ -45,8 +45,44 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
     switch (comando) {
         case 'menuadm':
-            const menuAdmTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🛡️  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗢𝗗𝗘𝗥𝗔𝗖𝗔𝗢  🛡️      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Ferramentas de contenção e segurança activa.\n\n ➔ *!ban / !kick [@user]* - Remove um infrator.\n ➔ *!promover [@user]* - Concede privilégios de ADM.\n ➔ *!rebaixar [@user]* - Retira privilégios de ADM.\n ➔ *!antilink [on/off]* - Apaga links comuns enviadas.\n ➔ *!antilink2 [on/off]* - Deleta link e bane o membro.\n ➔ *!fakes [on/off]* - Expulsa números gringos (+ de 1 DDI).\n ➔ *!grupo [abrir/fechar]* - Altera permissões do chat.\n ➔ *!limpar* - Limpa o histórico de exibição do chat.\n ➔ *!marcar* - Menciona todos os integrantes de uma vez.\n ➔ *!adms* - Chama a equipe técnica de ADMs.\n ➔ *!setregras [texto]* - Define o estatuto interno.\n ➔ *!regras* - Exibe as normas atuais salvas.\n ➔ *!boasvindas [on/off]* - Liga/Desliga o sistema de saudações.\n ➔ *!setwelcome1 / 2 / 3 [texto]* - Modifica os slots de BV.\n ➔ *!bv1 / !bv2 / !bv3* - Escolhe qual modelo fica ativo.\n ➔ *!atividade* - Exibe ranking de mensagens enviadas.\n ➔ *!online* - Lista membros que interagiram recentemente.\n░▒▓█████████████████████████████████████▓▒░`;
+            const menuAdmTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🛡️  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗢𝗗𝗘𝗥𝗔𝗖𝗔𝗢  🛡️      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Ferramentas de contenção e segurança activa.\n\n ➔ *!menuadm* ➔ Exibe este menu.\n ➔ *!adv [@user]* ➔ Adiciona 1 advertência (3 em 2 semanas = Ban Automático).\n ➔ *!ban / !kick [@user]* - Remove um infrator.\n ➔ *!promover [@user]* - Concede privilégios de ADM.\n ➔ *!rebaixar [@user]* - Retira privilégios de ADM.\n ➔ *!antilink [on/off]* - Apaga links comuns enviadas.\n ➔ *!antilink2 [on/off]* - Deleta link e bane o membro.\n ➔ *!fakes [on/off]* - Expulsa números gringos (+ de 1 DDI).\n ➔ *!grupo [abrir/fechar]* - Altera permissões do chat.\n ➔ *!limpar* - Limpa o histórico de exibição do chat.\n ➔ *!marcar* - Menciona todos os integrantes de uma vez.\n ➔ *!adms* - Chama a equipe técnica de ADMs.\n ➔ *!setregras [texto]* - Define o estatuto interno.\n ➔ *!regras* - Exibe as normas atuais salvas.\n ➔ *!boasvindas [on/off]* - Liga/Desliga o sistema de saudações.\n ➔ *!setwelcome1 / 2 / 3 [texto]* - Modifica os slots de BV.\n ➔ *!bv1 / !bv2 / !bv3* - Escolhe qual modelo fica ativo.\n ➔ *!atividade* - Exibe ranking de mensagens enviadas.\n ➔ *!online* - Lista membros que interagiram recentemente.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuAdmTxt }, { quoted: msg });
+            break;
+
+        case 'adv':
+            const alvoAdv = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoAdv) return sock.sendMessage(from, { text: "❌ Marque o membro que deseja aplicar a advertência!" }, { quoted: msg });
+            if (alvoAdv === botId) return sock.sendMessage(from, { text: "❌ Você não pode dar advertências para o próprio bot." }, { quoted: msg });
+
+            if (!db.usuarios[alvoAdv]) db.usuarios[alvoAdv] = { golds: 100, banco: 0 };
+            if (!db.usuarios[alvoAdv].advertencias) db.usuarios[alvoAdv].advertencias = [];
+
+            const timestampAgora = Date.now();
+            db.usuarios[alvoAdv].advertencias.push(timestampAgora);
+            
+            // Filtra as advertências recebidas apenas nas últimas 2 semanas (14 dias em milissegundos)
+            const duasSemanasEmMs = 14 * 24 * 60 * 60 * 1000;
+            const advsRecentes = db.usuarios[alvoAdv].advertencias.filter(t => (timestampAgora - t) <= duasSemanasEmMs);
+            
+            // Atualiza a lista guardando apenas o histórico válido
+            db.usuarios[alvoAdv].advertencias = advsRecentes;
+            salvarDB(db);
+
+            const totalAdvs = advsRecentes.length;
+
+            if (totalAdvs >= 3) {
+                if (!botIsAdmin) {
+                    return sock.sendMessage(from, { text: `🚨 *LIMITE ALCANÇADO:* O membro @${alvoAdv.split('@')[0]} atingiu ${totalAdvs} advertências em menos de 2 semanas! Porém, não posso bani-lo porque não sou Administrador do grupo! 💧`, mentions: [alvoAdv] }, { quoted: msg });
+                }
+                // Executa o Ban Automático Estruturado
+                await sock.groupParticipantsUpdate(from, [alvoAdv], "remove");
+                // Limpa o contador dele após o banimento definitivo
+                db.usuarios[alvoAdv].advertencias = [];
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `🔨 *BAN AUTOMÁTICO:* O usuário @${alvoAdv.split('@')[0]} acumulou ${totalAdvs} advertências dentro do prazo de 2 semanas e foi banido do grupo!`, mentions: [alvoAdv] });
+            } else {
+                await sock.sendMessage(from, { text: `⚠️ *ADVERTÊNCIA APLICADA:* O usuário @${alvoAdv.split('@')[0]} recebeu uma advertência da moderação.\n\n📊 *Status:* [${totalAdvs}/3] advertências ativas nas últimas 2 semanas. Evite o acúmulo para não ser banido!`, mentions: [alvoAdv] }, { quoted: msg });
+            }
             break;
 
         case 'boasvindas':
@@ -62,7 +98,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'kick':
             if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para remover membros! 💧" }, { quoted: msg });
             const alvoBan = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoBan) return sock.sendMessage(from, { text: "❌ Marque o membro que deseja banir!" }, { quoted: msg });
+            if (!alvoBan) return sock.sendMessage(from, { text: "❌ Marque the membro que deseja banir!" }, { quoted: msg });
             if (alvoBan === botId) return sock.sendMessage(from, { text: "🤔 Tentar me banir usando meus próprios comandos? Genial." }, { quoted: msg });
             
             await sock.groupParticipantsUpdate(from, [alvoBan], "remove");
@@ -165,33 +201,3 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'bv1':
         case 'bv2':
         case 'bv3':
-            gConfig.bv_ativo = comando;
-            salvarDB(db);
-            await sock.sendMessage(from, { text: `📢 *SISTEMA ATIVADO:* O modelo de recepção padrão agora está definido para o slot *${comando.toUpperCase()}*!` }, { quoted: msg });
-            break;
-
-        case 'atividade':
-            let membrosAtividade = Object.keys(db.usuarios).map(id => {
-                return { id, msgCont: db.usuarios[id].mensagens_contadas || 0 };
-            }).sort((a, b) => b.msgCont - a.msgCont).slice(0, 15);
-
-            let ativTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      📊  𝗠𝗢𝗡𝗜𝗧𝗢𝗥𝗔𝗠𝗘𝗡𝗧𝗢 𝗗𝗘 𝗫𝗣  📊      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Membros com maior tráfego de mensagens no bot:\n\n`;
-            membrosAtividade.forEach((m, i) => {
-                ativTxt += ` 💧 *${i + 1}º* @${m.id.split('@')[0]} ➔ 💬 *${m.msgCont} mensagens*\n`;
-            });
-            await sock.sendMessage(from, { text: ativTxt, mentions: membrosAtividade.map(m => m.id) }, { quoted: msg });
-            break;
-
-        case 'online':
-            let onlineFiltrados = Object.keys(db.usuarios).filter(id => (db.usuarios[id].mensagens_contadas || 0) > 5).slice(0, 20);
-            let onTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🟢  𝗠𝗘𝗠𝗕𝗥𝗢𝗦 𝗔𝗧𝗜𝗩𝗢𝗦 𝗡𝗢 𝗖𝗛𝗔𝗧  🟢      ██▓\n░▒▓█████████████████████████████████████▓▒░\n🌊 Integrantes em atividade recente verificada:\n\n`;
-            onlineFiltrados.forEach(id => {
-                onTxt += ` ➔ @${id.split('@')[0]} [⚡ 𝗟𝗢𝗚𝗚𝗘𝗗]\n`;
-            });
-            await sock.sendMessage(from, { text: onTxt, mentions: onlineFiltrados }, { quoted: msg });
-            break;
-
-        default:
-            break;
-    }
-};
