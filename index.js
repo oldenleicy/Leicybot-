@@ -24,14 +24,18 @@ const port = process.env.PORT || 3000;
 // ─── INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS ───
 const caminhoDB = path.join(__dirname, 'database.json');
 
-const estruturaPadrao = { 
-    usuarios: {}, 
-    grupos: {}, 
-    config_bot: { 
-        url_foto_menu: "https://i.imgur.com/Kdf946S.png", 
-        manutencao: false, 
-        comandos_desativados: [] 
-    } 
+const estruturaPadrao = {
+    usuarios: {},
+    grupos: {},
+    config_bot: {
+        nome_bot: "LeicyBot",
+        url_foto_menu: "https://i.imgur.com/Kdf946S.png",
+        manutencao: false,
+        pausado: false,
+        comandos_desativados: [],
+        titulos_criados: ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"],
+        ddi_permitido: "258"
+    }
 };
 
 let db = estruturaPadrao;
@@ -67,7 +71,7 @@ function salvarDB(dadosNovos) {
 }
 // ─────────────────────────────────────────────────────────────
 
-const MEU_NUMERO_WHATSAPP = '258840504242'; 
+const MEU_NUMERO_WHATSAPP = '258840504242';
 
 let statusConexao = "Iniciando aplicação...";
 let botSocket = null;
@@ -103,7 +107,7 @@ async function iniciarBot() {
         try {
             fs.mkdirSync(pastaAuth, { recursive: true });
             const sessionData = JSON.parse(Buffer.from(process.env.WA_SESSION_DATA, 'base64').toString('utf-8'));
-            
+
             Object.keys(sessionData).forEach(file => {
                 fs.writeFileSync(path.join(pastaAuth, file), JSON.stringify(sessionData[file]));
             });
@@ -122,8 +126,8 @@ async function iniciarBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        mobile: false, 
-        browser: ['Mac OS', 'Chrome', '124.0.0.0'] 
+        mobile: false,
+        browser: ['Mac OS', 'Chrome', '124.0.0.0']
     });
 
     botSocket.ev.on('creds.update', async () => {
@@ -189,6 +193,51 @@ async function iniciarBot() {
                 // Captura erros internos de comando de maneira segura para não crashar o index.js
                 await lidarComComando(botSocket, msg, db, salvarDB).catch(e => console.error('[ERRO INTERNO CAPTURADO]:', e));
             }
+        }
+    });
+
+    // ─── NOVO: ENTRADA/SAÍDA DE MEMBROS — boas-vindas e bloqueio de DDI estrangeiro ───
+    // Isso não existia antes; sem isso, os comandos !boasvindas e !fakes só ligavam uma
+    // flag no banco mas nada de fato acontecia quando alguém entrava no grupo.
+    botSocket.ev.on('group-participants.update', async (update) => {
+        try {
+            const { id: groupId, participants, action } = update;
+            if (action !== 'add') return;
+
+            if (!db.grupos) db.grupos = {};
+            const gConfig = db.grupos[groupId];
+            if (!gConfig) return; // grupo ainda não tem configuração (nenhum comando !adm rodado nele ainda)
+
+            for (const participantJid of participants) {
+                const numero = participantJid.split('@')[0];
+
+                // FAKES: expulsa DDI fora do padrão configurado
+                if (gConfig.fakes) {
+                    const ddiPermitido = (db.config_bot && db.config_bot.ddi_permitido) || '258';
+                    if (!numero.startsWith(ddiPermitido)) {
+                        try {
+                            await botSocket.groupParticipantsUpdate(groupId, [participantJid], 'remove');
+                            await botSocket.sendMessage(groupId, { text: `🌐 Número estrangeiro @${numero} removido automaticamente (DDI fora do padrão +${ddiPermitido}).`, mentions: [participantJid] });
+                        } catch (e) {
+                            console.error('[FAKES] Falha ao remover:', e.message);
+                        }
+                        continue; // não manda boas-vindas pra quem já foi expulso
+                    }
+                }
+
+                // BOAS-VINDAS
+                if (gConfig.boasvindas) {
+                    const slotAtivo = gConfig.bv_ativo || 'bv1';
+                    const textoBV = gConfig[slotAtivo] || gConfig.bv1 || 'Seja bem-vindo(a) ao grupo! 🌊';
+                    try {
+                        await botSocket.sendMessage(groupId, { text: `@${numero} ${textoBV}`, mentions: [participantJid] });
+                    } catch (e) {
+                        console.error('[BOAS-VINDAS] Falha ao enviar:', e.message);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[GROUP-UPDATE] Erro:', e.message);
         }
     });
 }
