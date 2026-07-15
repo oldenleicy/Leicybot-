@@ -1,12 +1,15 @@
+const criarUsuarioPadrao = require('./usuarioPadrao');
+const interacaoTextos = require('../interacao_textos');
+
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
     const sender = msg.key.participant || msg.key.remoteJid;
 
     // Correção: Inicialização de segurança para evitar crash fatal caso o usuário não exista no banco
     if (!db.usuarios[sender]) {
-        db.usuarios[sender] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+        db.usuarios[sender] = criarUsuarioPadrao();
     }
-    
+
     let u = db.usuarios[sender];
     if (u.beijados === undefined) u.beijados = 0;
     if (u.abracados === undefined) u.abracados = 0;
@@ -27,7 +30,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             "Se você pudesse dobrar uma folha de papel ao meio exatamente 42 vezes, a espessura dela seria grande o suficiente para chegar até a Lua! 🤯🔬"
         ],
         arte: [
-            "Leonardo da Vinci passava anos pintando apenas os lábios da Mona Lisa. He era tão perfeccionista que quase enlouqueceu os clientes! 🎨",
+            "Leonardo da Vinci passava anos pintando apenas os lábios da Mona Lisa. Ele era tão perfeccionista que quase enlouqueceu os clientes! 🎨",
             "A famosa estátua de David, de Michelangelo, foi esculpida a partir de um bloco de mármore gigante que outros dois artistas jogaram fora por acharem 'defeituoso'. 🗿"
         ],
         filmes: [
@@ -43,7 +46,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             "Eiichiro Oda, criador de One Piece, dorme apenas 3 horas por noite há mais de 20 anos para conseguir entregar os capítulos do mangá em dia! 🏴‍☠️🍖"
         ],
         tecnologia: [
-            "O primeiro mouse de computador da história foi construído in 1964 e era feito inteiramente de madeira com duas engrenagens de metal! 💻🪵",
+            "O primeiro mouse de computador da história foi construído em 1964 e era feito inteiramente de madeira com duas engrenagens de metal! 💻🪵",
             "O primeiro vírus de computador foi criado em 1971 e se chamava 'Creeper'. Ele não destruía nada, só exibia a mensagem: 'Pegue-me se for capaz!'. 👾"
         ],
         natureza: [
@@ -71,11 +74,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             if (isNaN(aposta) || aposta <= 0) return sock.sendMessage(from, { text: "❌ Defina uma quantia válida de Golds para apostar no combate!" }, { quoted: msg });
 
             if (u.golds < aposta) return sock.sendMessage(from, { text: "❌ Você não tem todos esses Golds em mãos para sustentar esse desafio!" }, { quoted: msg });
-            
+
             if (!db.usuarios[adversario]) {
-                db.usuarios[adversario] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+                db.usuarios[adversario] = criarUsuarioPadrao();
             }
-            
+
             if (db.usuarios[adversario].golds < aposta) {
                 return sock.sendMessage(from, { text: "❌ O seu oponente está muito quebrado e não tem essa quantia para cobrir a aposta!" }, { quoted: msg });
             }
@@ -97,10 +100,14 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const pretendente = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!pretendente) return sock.sendMessage(from, { text: "❌ Marque a pessoa sortuda (ou azarada) para fazer o pedido de casamento!" }, { quoted: msg });
             if (pretendente === sender) return sock.sendMessage(from, { text: "🛑 Casar com você mesmo? O nível de carência superou as expectativas do bot." }, { quoted: msg });
-            
+
+            if (u.conjugue) return sock.sendMessage(from, { text: "❌ Você já é casado! Use *!divorciar* antes de pedir alguém em casamento." }, { quoted: msg });
+
             if (!db.usuarios[pretendente]) {
-                db.usuarios[pretendente] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+                db.usuarios[pretendente] = criarUsuarioPadrao();
             }
+            if (db.usuarios[pretendente].conjugue) return sock.sendMessage(from, { text: "❌ Esse membro já está casado com outra pessoa!" }, { quoted: msg });
+
             db.usuarios[pretendente].pedido_casamento = sender;
             salvarDB(db);
 
@@ -110,18 +117,20 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'aceitar':
             if (!u.pedido_casamento) return sock.sendMessage(from, { text: "❌ Ninguém te pediu em casamento recentemente... Que situação deprimente! 💧" }, { quoted: msg });
             const noivo = u.pedido_casamento;
-            
+
             if (!db.usuarios[noivo]) {
-                db.usuarios[noivo] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+                db.usuarios[noivo] = criarUsuarioPadrao();
             }
 
             u.conjugue = noivo;
+            u.casamentos_total = (u.casamentos_total || 0) + 1;
             db.usuarios[noivo].conjugue = sender;
+            db.usuarios[noivo].casamentos_total = (db.usuarios[noivo].casamentos_total || 0) + 1;
             u.pedido_casamento = null;
             salvarDB(db);
 
-            const casórioTxt = `░▒▓█████████████████████████████████████▓▒░\n💍   𝗠𝗔𝗧𝗥𝗜𝗠𝗢𝗡𝗜𝗢 𝗩𝗜𝗥𝗧𝗨𝗔𝗟 𝗖𝗢𝗡𝗦𝗨𝗠𝗔𝗗𝗢   💍\n░▒▓████████▒▒▓██████████████████████████▓▒░\n🔔 Soltem os fogos! sob as ordens e benção do comandante supremo Olden, @${sender.split('@')[0]} e @${noivo.split('@')[0]} agora estão casados virtualmente!\n\n❤️ Que a união dure até o próximo reset de banco de dados! 😉🎉`;
-            await sock.sendMessage(from, { text: casórioTxt, mentions: [sender, noivo] }, { quoted: msg });
+            const casorioTxt = `░▒▓█████████████████████████████████████▓▒░\n💍   𝗠𝗔𝗧𝗥𝗜𝗠𝗢𝗡𝗜𝗢 𝗩𝗜𝗥𝗧𝗨𝗔𝗟 𝗖𝗢𝗡𝗦𝗨𝗠𝗔𝗗𝗢   💍\n░▒▓████████▒▒▓██████████████████████████▓▒░\n🔔 Soltem os fogos! sob as ordens e benção do comandante supremo Olden, @${sender.split('@')[0]} e @${noivo.split('@')[0]} agora estão casados virtualmente!\n\n❤️ Que a união dure até o próximo reset de banco de dados! 😉🎉`;
+            await sock.sendMessage(from, { text: casorioTxt, mentions: [sender, noivo] }, { quoted: msg });
             break;
 
         case 'divorciar':
@@ -138,12 +147,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'beijar':
             const beijado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!beijado) return sock.sendMessage(from, { text: "❌ Marque quem você deseja beijar!" }, { quoted: msg });
-            
+
             if (!db.usuarios[beijado]) {
-                db.usuarios[beijado] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+                db.usuarios[beijado] = criarUsuarioPadrao();
             }
             if (db.usuarios[beijado].beijados === undefined) db.usuarios[beijado].beijados = 0;
-            
+
             db.usuarios[beijado].beijados += 1;
             salvarDB(db);
             await sock.sendMessage(from, { text: `💋 @${sender.split('@')[0]} deu um beijo cinematográfico de tirar o fôlego em @${beijado.split('@')[0]}! O amor está flutuando no chat! 💕`, mentions: [sender, beijado] }, { quoted: msg });
@@ -158,12 +167,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'abracar':
             const abracado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!abracado) return sock.sendMessage(from, { text: "❌ Marque quem vai receber esse abraço!" }, { quoted: msg });
-            
+
             if (!db.usuarios[abracado]) {
-                db.usuarios[abracado] = { golds: 100, banco: 0, escudo: false, mensagens_contadas: 0, trabalhos_hoje: 0, mineracoes_hoje: 0, titulo_1: null, titulo_2: null };
+                db.usuarios[abracado] = criarUsuarioPadrao();
             }
             if (db.usuarios[abracado].abracados === undefined) db.usuarios[abracado].abracados = 0;
-            
+
             db.usuarios[abracado].abracados += 1;
             salvarDB(db);
             await sock.sendMessage(from, { text: `🫂 @${sender.split('@')[0]} deu um abraço apertado e confortante em @${abracado.split('@')[0]}. Que momento lindo de amizade pura! 💧`, mentions: [sender, abracado] }, { quoted: msg });
@@ -171,20 +180,20 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
         case 'gado':
             const gadoPorcentagem = Math.floor(Math.random() * 101);
-            const gadoTxt = `╔═══════════════════════════════════════╗\n          🐂  𝗧𝗘𝗥𝗠𝗢𝗠𝗘𝗧𝗥𝗢 𝗗𝗘 𝗚𝗔𝗗𝗢  🐂\n╚═══════════════════════════════════════╝\n👤 𝗠𝗲𝗺𝗯𝗿𝗼: @${sender.split('@')[0]}\n📊 𝗡𝗶́𝘃𝗲𝗹: [${gadoPorcentagem}%]\n\n🔍 *Análise do Bot:* \n${gadoPorcentagem === 0 ? '👑 Um Alfa autêntico. Não se curva por ninguém e mantém a postura intocável por decreto de Olden!' : gadoPorcentagem < 40 ? '💧 Tem sentimentos moles, mas disfarça bem no grupo.' : gadoPorcentagem < 80 ? '🚨 Alerta vermelho! Já manda bom dia com coração e curte tudo que o alvo posta.' : '🌾 CAPIM DETECTADO: Perdeu as rédeas da própria vida! Se mandarem latir, você late na hora!'}\n╚═══════════════════════════════════════╝`;
+            const gadoTxt = `╔═══════════════════════════════════════╗\n          🐂  𝗧𝗘𝗥𝗠𝗢𝗠𝗘𝗧𝗥𝗢 𝗗𝗘 𝗚𝗔𝗗𝗢  🐂\n╚═══════════════════════════════════════╝\n👤 𝗠𝗲𝗺𝗯𝗿𝗼: @${sender.split('@')[0]}\n📊 𝗡𝗶́𝘃𝗲𝗹: [${gadoPorcentagem}%]\n\n🔍 *Análise do Bot:* \n${interacaoTextos.respostasGado(gadoPorcentagem)}\n╚═══════════════════════════════════════╝`;
             await sock.sendMessage(from, { text: gadoTxt, mentions: [sender] }, { quoted: msg });
             break;
 
         case 'gostoso':
             const gostosoPorcentagem = Math.floor(Math.random() * 101);
-            const gostosoTxt = `╔═══════════════════════════════════════╗\n         🔥  𝗔𝗩𝗔𝗟𝗜𝗔𝗖𝗔𝗢 𝗗𝗘 𝗕𝗘𝗟𝗘𝗭𝗔  🔥\n╚═══════════════════════════════════════╝\n👤 𝗠𝗲𝗺𝗯𝗿𝗼: @${sender.split('@')[0]}\n📊 𝗡𝗶́𝘃𝗲𝗹: [${gostosoPorcentagem}%]\n\n🔍 *Veredito Técnico:* \n${gostosoPorcentagem < 30 ? '🥴 A beleza é totalmente interior, né? O importante é ter saúde, simpatia e Golds no banco!' : gostosoPorcentagem < 75 ? '✨ Arrumadinho! Se passar um perfume caro e tirar foto com ângulo certo no espelho, engana bem.' : '🔥 GOSTOSURA EXTREMA: Escondam os celulares! A beleza dessa pessoa travou o processamento do Railway!'}\n╚═══════════════════════════════════════╝`;
+            const gostosoTxt = `╔═══════════════════════════════════════╗\n         🔥  𝗔𝗩𝗔𝗟𝗜𝗔𝗖𝗔𝗢 𝗗𝗘 𝗕𝗘𝗟𝗘𝗭𝗔  🔥\n╚═══════════════════════════════════════╝\n👤 𝗠𝗲𝗺𝗯𝗿𝗼: @${sender.split('@')[0]}\n📊 𝗡𝗶́𝘃𝗲𝗹: [${gostosoPorcentagem}%]\n\n🔍 *Veredito Técnico:* \n${interacaoTextos.respostasGostoso(gostosoPorcentagem)}\n╚═══════════════════════════════════════╝`;
             await sock.sendMessage(from, { text: gostosoTxt, mentions: [sender] }, { quoted: msg });
             break;
 
         case 'curiosidade':
             // Lógica otimizada e blindada para capturar subcategorias via !curiosidade/categoria ou parâmetros comuns
             let catAlvo = subCategoriaCmd || args[0]?.toLowerCase();
-            
+
             if (catAlvo && bancoCuriosidades[catAlvo.trim()]) {
                 const listaCurio = bancoCuriosidades[catAlvo.trim()];
                 const fatoEscolhido = listaCurio[Math.floor(Math.random() * listaCurio.length)];
