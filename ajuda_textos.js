@@ -246,7 +246,10 @@ module.exports = {
 👉 *Filtros Disponíveis:* ➔ \`!curiosidade/animes\`
 ➔ \`!curiosidade/games\`
 ➔ \`!curiosidade/ciencia\`
+➔ \`!curiosidade/arte\`
+➔ \`!curiosidade/filmes\`
 ➔ \`!curiosidade/historia\`
+➔ \`!curiosidade/tecnologia\`
 ➔ \`!curiosidade/natureza\`
 ➔ \`!curiosidade/sports\``
         };
