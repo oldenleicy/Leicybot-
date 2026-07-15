@@ -1,3 +1,5 @@
+const criarUsuarioPadrao = require('./usuarioPadrao');
+
 module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoComando = false) => {
     const from = msg.key.remoteJid;
     let sender = msg.key.participant || msg.key.remoteJid;
@@ -16,7 +18,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
     const groupMetadata = await sock.groupMetadata(from);
     const participants = groupMetadata.participants;
     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-    
+
     const adms = participants.filter(p => p.admin !== null).map(p => p.id);
     const isAdmin = adms.includes(sender);
     const botIsAdmin = adms.includes(botId);
@@ -54,17 +56,16 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             if (!alvoAdv) return sock.sendMessage(from, { text: "❌ Marque o membro que deseja aplicar a advertência!" }, { quoted: msg });
             if (alvoAdv === botId) return sock.sendMessage(from, { text: "❌ Você não pode dar advertências para o próprio bot." }, { quoted: msg });
 
-            if (!db.usuarios[alvoAdv]) db.usuarios[alvoAdv] = { golds: 100, banco: 0 };
+            if (!db.usuarios[alvoAdv]) db.usuarios[alvoAdv] = criarUsuarioPadrao();
             if (!db.usuarios[alvoAdv].advertencias) db.usuarios[alvoAdv].advertencias = [];
 
             const timestampAgora = Date.now();
             db.usuarios[alvoAdv].advertencias.push(timestampAgora);
-            
+
             // Filtra as advertências recebidas apenas nas últimas 2 semanas (14 dias em milissegundos)
             const duasSemanasEmMs = 14 * 24 * 60 * 60 * 1000;
             const advsRecentes = db.usuarios[alvoAdv].advertencias.filter(t => (timestampAgora - t) <= duasSemanasEmMs);
-            
-            // Atualiza a lista guardando apenas o histórico válido
+
             db.usuarios[alvoAdv].advertencias = advsRecentes;
             salvarDB(db);
 
@@ -76,7 +77,6 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
                 }
                 // Executa o Ban Automático Estruturado
                 await sock.groupParticipantsUpdate(from, [alvoAdv], "remove");
-                // Limpa o contador dele após o banimento definitivo
                 db.usuarios[alvoAdv].advertencias = [];
                 salvarDB(db);
                 await sock.sendMessage(from, { text: `🔨 *BAN AUTOMÁTICO:* O usuário @${alvoAdv.split('@')[0]} acumulou ${totalAdvs} advertências dentro do prazo de 2 semanas e foi banido do grupo!`, mentions: [alvoAdv] });
@@ -98,9 +98,9 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
         case 'kick':
             if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para remover membros! 💧" }, { quoted: msg });
             const alvoBan = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoBan) return sock.sendMessage(from, { text: "❌ Marque the membro que deseja banir!" }, { quoted: msg });
+            if (!alvoBan) return sock.sendMessage(from, { text: "❌ Marque o membro que deseja banir!" }, { quoted: msg });
             if (alvoBan === botId) return sock.sendMessage(from, { text: "🤔 Tentar me banir usando meus próprios comandos? Genial." }, { quoted: msg });
-            
+
             await sock.groupParticipantsUpdate(from, [alvoBan], "remove");
             await sock.sendMessage(from, { text: `🔨 *JUSTIÇA APLICADA:* @${alvoBan.split('@')[0]} foi devidamente removido do grupo por má conduta!`, mentions: [alvoBan] }, { quoted: msg });
             break;
@@ -109,7 +109,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para alterar cargos!" }, { quoted: msg });
             const alvoPromover = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!alvoPromover) return sock.sendMessage(from, { text: "❌ Marque o membro para torná-lo ADM!" }, { quoted: msg });
-            
+
             await sock.groupParticipantsUpdate(from, [alvoPromover], "promote");
             await sock.sendMessage(from, { text: `✨ Novo Administrador alocado: @${alvoPromover.split('@')[0]}!`, mentions: [alvoPromover] }, { quoted: msg });
             break;
@@ -118,7 +118,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para alterar cargos!" }, { quoted: msg });
             const alvoRebaixar = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             if (!alvoRebaixar) return sock.sendMessage(from, { text: "❌ Marque o administrador que deseja rebaixar!" }, { quoted: msg });
-            
+
             await sock.groupParticipantsUpdate(from, [alvoRebaixar], "demote");
             await sock.sendMessage(from, { text: `📉 O membro @${alvoRebaixar.split('@')[0]} perdeu suas credenciais administrativas!`, mentions: [alvoRebaixar] }, { quoted: msg });
             break;
@@ -184,7 +184,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             break;
 
         case 'regras':
-            const regrasTxt = `╔═══════════════════════════════════════╗\n          📜  𝗡𝗢𝗥𝗠𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  📜\n╚═══════════════════════════════════════╝\n\n ${gConfig.regras || "Nenhuma regra cadastrada ainda."}\n\n─────────────────────────────────────────\n 🌊 Evite punições, colabore com o grupo! 💧\n╚═══════════════════════════════════════╝`;
+            const regrasTxt = `╔═══════════════════════════════════════╗\n          📜  𝗡𝗢𝗥𝗠𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  📜\n╚═══════════════════════════════════════╗\n\n ${gConfig.regras || "Nenhuma regra cadastrada ainda."}\n\n─────────────────────────────────────────\n 🌊 Evite punições, colabore com o grupo! 💧\n╚═══════════════════════════════════════╝`;
             await sock.sendMessage(from, { text: regrasTxt }, { quoted: msg });
             break;
 
@@ -201,3 +201,47 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
         case 'bv1':
         case 'bv2':
         case 'bv3':
+            gConfig.bv_ativo = comando;
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `✅ Modelo de Boas-Vindas *${comando.toUpperCase()}* selecionado como ativo!\n\n📋 *Prévia:*\n${gConfig[comando] || ("(slot vazio, configure com !setwelcome" + comando.replace('bv', '') + ")")}` }, { quoted: msg });
+            break;
+
+        case 'atividade':
+            const idsGrupoAtiv = participants.map(p => p.id);
+            const rankAtividade = idsGrupoAtiv
+                .filter(id => db.usuarios[id])
+                .map(id => ({ id, msgs: db.usuarios[id].mensagens_contadas || 0 }))
+                .sort((a, b) => b.msgs - a.msgs)
+                .slice(0, 15);
+
+            let atividadeTxt = `╔═══════════════════════════════════════╗\n          📊  𝗥𝗔𝗡𝗞𝗜𝗡𝗚 𝗗𝗘 𝗔𝗧𝗜𝗩𝗜𝗗𝗔𝗗𝗘  📊\n╚═══════════════════════════════════════╝\n\n`;
+            if (rankAtividade.length === 0) {
+                atividadeTxt += "Nenhum dado de atividade registrado ainda.\n";
+            } else {
+                rankAtividade.forEach((m, idx) => { atividadeTxt += ` ${idx + 1}º ➔ @${m.id.split('@')[0]} — ${m.msgs} mensagens\n`; });
+            }
+            atividadeTxt += `╚═══════════════════════════════════════╝`;
+            await sock.sendMessage(from, { text: atividadeTxt, mentions: rankAtividade.map(m => m.id) }, { quoted: msg });
+            break;
+
+        case 'online':
+            const agora = Date.now();
+            const idsGrupoOnline = participants.map(p => p.id);
+            const recentes = idsGrupoOnline
+                .filter(id => db.usuarios[id]?.ultima_interacao && (agora - db.usuarios[id].ultima_interacao) < 86400000)
+                .sort((a, b) => db.usuarios[b].ultima_interacao - db.usuarios[a].ultima_interacao);
+
+            let onlineTxt = `╔═══════════════════════════════════════╗\n          🟢  𝗠𝗘𝗠𝗕𝗥𝗢𝗦 𝗔𝗧𝗜𝗩𝗢𝗦 (𝟮𝟰𝗵)  🟢\n╚═══════════════════════════════════════╝\n\n`;
+            if (recentes.length === 0) {
+                onlineTxt += "Nenhuma atividade registrada nas últimas 24 horas.\n";
+            } else {
+                recentes.forEach(id => { onlineTxt += ` 🟢 @${id.split('@')[0]}\n`; });
+            }
+            onlineTxt += `╚═══════════════════════════════════════╝`;
+            await sock.sendMessage(from, { text: onlineTxt, mentions: recentes }, { quoted: msg });
+            break;
+
+        default:
+            break;
+    }
+};
