@@ -1,4 +1,5 @@
 // modulos/outros.js
+const criarUsuarioPadrao = require('./usuarioPadrao');
 
 const outrosModulo = async (sock, msg, comando, args, db, salvarDB) => {
     try {
@@ -13,21 +14,14 @@ const outrosModulo = async (sock, msg, comando, args, db, salvarDB) => {
         // Garante que o usuário exista na database
         if (!db.usuarios) db.usuarios = {};
         if (!db.usuarios[sender]) {
-            db.usuarios[sender] = { 
-                golds: 100, 
-                banco: 0, 
-                bio: "Nenhuma descrição definida ainda. Use !setbio",
-                idade: "Não informada",
-                estado_civil: "Solteiro(a)",
-                casamentos_total: 0
-            };
+            db.usuarios[sender] = criarUsuarioPadrao();
         }
 
         const u = db.usuarios[sender];
 
         switch (comando) {
             case 'menuoutros':
-                const txtMenuOutros = `░▒▓█████████████████████████████████████▓▒░\n📊       📊  𝗖𝗘𝗡𝗧𝗥𝗔𝗟 𝗗𝗘 𝗣𝗘𝗥𝗦𝗢𝗡𝗔𝗟𝗜𝗭𝗔𝗖̧𝗔̃𝗢  📊       📊\n░▒▓█████████████████████████████████████▓▒░\n\nConfigure sua identidade interna no Leicybot:\n\n🔹 *!perfil* ➔ Exibe seu cartão de perfil global.\n🔹 *!setbio [texto]* ➔ Altera a biografia do seu perfil.\n🔹 *!setidade [número]* ➔ Define sua idade.\n🔹 *!marcarcasamento [@membro]* ➔ Propõe casamento a alguém.\n🔹 *!divorciar* ➔ Finaliza a união atual.\n\n░▒▓█████████████████████████████████████▓▒░`;
+                const txtMenuOutros = `░▒▓█████████████████████████████████████▓▒░\n📊       📊  𝗖𝗘𝗡𝗧𝗥𝗔𝗟 𝗗𝗘 𝗣𝗘𝗥𝗦𝗢𝗡𝗔𝗟𝗜𝗭𝗔𝗖̧𝗔̃𝗢  📊       📊\n░▒▓█████████████████████████████████████▓▒░\n\nConfigure sua identidade interna no Leicybot:\n\n🔹 *!perfil* ➔ Exibe seu cartão de perfil global.\n🔹 *!setbio [texto]* ➔ Altera a biografia do seu perfil.\n🔹 *!setidade [número]* ➔ Define sua idade.\n\n💍 *Casamento virtual mora no !menujogos* (comandos !casar, !aceitar, !divorciar).\n\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: txtMenuOutros }, { quoted: msg });
                 break;
 
@@ -46,15 +40,12 @@ const outrosModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
             case 'setidade':
                 const novaIdade = args[0];
-                if (!novaIdade || isNaN(novaIdade)) return sock.sendMessage(from, { text: "❌ Informe uma idade válida em números!" }, { quoted: msg });
+                if (!novaIdade || isNaN(novaIdade) || Number(novaIdade) <= 0 || Number(novaIdade) > 120) {
+                    return sock.sendMessage(from, { text: "❌ Informe uma idade válida em números (entre 1 e 120)!" }, { quoted: msg });
+                }
                 u.idade = `${novaIdade} anos`;
                 salvarDB(db);
                 await sock.sendMessage(from, { text: `✅ *Idade definida para ${novaIdade} anos!*` }, { quoted: msg });
-                break;
-
-            case 'marcarcasamento':
-            case 'divorciar':
-                await sock.sendMessage(from, { text: "⏳ Os comandos do sistema de casamento estão em fase de calibração e serão liberados em breve!" }, { quoted: msg });
                 break;
 
             default:
