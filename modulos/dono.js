@@ -1,3 +1,5 @@
+const criarUsuarioPadrao = require('./usuarioPadrao');
+
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
     let sender = msg.key.participant || msg.key.remoteJid;
@@ -10,7 +12,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     // ══════════════════════════════════════════════════════════════
     // ⚠️ CONFIGURAÇÃO DO ID DO DONO
     // ══════════════════════════════════════════════════════════════
-    const DONO_OFICIAL = '258877080511@s.whatsapp.net'; 
+    const DONO_OFICIAL = '258877080511@s.whatsapp.net';
 
     // Bloqueio de segurança contra impostores
     if (sender !== DONO_OFICIAL) {
@@ -20,17 +22,18 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     // Garantir inicialização dos arrays globais do bot
     if (!db.config_bot) db.config_bot = {};
     if (!db.config_bot.titulos_criados) db.config_bot.titulos_criados = ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"];
+    if (!db.config_bot.comandos_desativados) db.config_bot.comandos_desativados = [];
 
     switch (comando) {
         case 'menudono':
-            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!reiniciar* ➔ Reiniciar buffers e contêineres do Railway.\n\n🌟 *👑 CONTROLE DE TÍTULOS E PERMISSÕES DE ELITE:*\n🔹 *!criartitulo [nome]* ➔ Registra um novo título no sistema do bot.\n🔹 *!dartitulo [@membro] [nome]* ➔ Concede um título (com anúncio se for especial).\n🔹 *!removoertitulo [@membro] [nome]* ➔ Retira um título de um usuário.\n🔹 *!concederpermissao [@membro] [cmd]* ➔ Dá acesso a comandos ADM para não-adms.\n\n💰 *🪙 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Moedas.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto [URL]* ➔ Modificar a imagem oficial do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n░▒▓█████████████████████████████████████▓▒░`;
+            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!reiniciar* ➔ Reiniciar buffers e contêineres do Railway.\n🔹 *!desligar / !ligar* ➔ Pausa ou retoma o processamento de comandos.\n\n🌟 *👑 CONTROLE DE TÍTULOS E PERMISSÕES DE ELITE:*\n🔹 *!criartitulo [nome]* ➔ Registra um novo título no sistema do bot.\n🔹 *!dartitulo [@membro] [nome]* ➔ Concede um título (com anúncio se for especial).\n🔹 *!addcelestial [@membro]* ➔ Atalho para dar o título especial Celestial direto.\n🔹 *!removoertitulo [@membro] [nome]* ➔ Retira um título de um usuário.\n🔹 *!concederpermissao [@membro] [cmd]* ➔ Dá acesso a comandos ADM para não-adms.\n\n💰 *🪙 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Moedas.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto [URL]* ➔ Modificar a imagem oficial do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n🔹 *!transmitir [texto]* ➔ Envia um aviso para todos os grupos conhecidos.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: textoMenuDono }, { quoted: msg });
             break;
 
         case 'criartitulo':
             const novoTitulo = args.join(" ").trim();
             if (!novoTitulo) return sock.sendMessage(from, { text: "❌ Insira o nome do título que deseja criar! Ex: `!criartitulo Imperador`" }, { quoted: msg });
-            
+
             if (db.config_bot.titulos_criados.includes(novoTitulo)) {
                 return sock.sendMessage(from, { text: "⚠️ Esse título já está cadastrado no sistema!" }, { quoted: msg });
             }
@@ -48,11 +51,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 return sock.sendMessage(from, { text: "❌ Uso correto: *!dartitulo [@membro] [Nome do Título]*" }, { quoted: msg });
             }
 
-            if (!db.usuarios[alvoDar]) db.usuarios[alvoDar] = { golds: 100, banco: 0 };
+            if (!db.usuarios[alvoDar]) db.usuarios[alvoDar] = criarUsuarioPadrao();
 
             // Classificação especial solicitada
             const especiais = ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"];
-            
+
             if (especiais.includes(tituloParaDar)) {
                 db.usuarios[alvoDar].titulo_especial = tituloParaDar;
                 db.usuarios[alvoDar].apresentacao = true; // Ativa a apresentação ativa automática
@@ -66,6 +69,17 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 salvarDB(db);
                 await sock.sendMessage(from, { text: `✅ O título regular *${tituloParaDar}* foi atribuído com sucesso para @${alvoDar.split('@')[0]}!`, mentions: [alvoDar] }, { quoted: msg });
             }
+            break;
+
+        case 'addcelestial':
+            const alvoCelestial = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoCelestial) return sock.sendMessage(from, { text: "❌ Marque quem vai receber o título Celestial! Ex: `!addcelestial @membro`" }, { quoted: msg });
+
+            if (!db.usuarios[alvoCelestial]) db.usuarios[alvoCelestial] = criarUsuarioPadrao();
+            db.usuarios[alvoCelestial].titulo_especial = "Celestial";
+            db.usuarios[alvoCelestial].apresentacao = true;
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `👑 @${alvoCelestial.split('@')[0]} recebeu o título especial *Celestial* diretamente!`, mentions: [alvoCelestial] }, { quoted: msg });
             break;
 
         case 'removoertitulo':
@@ -86,7 +100,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                     return sock.sendMessage(from, { text: "❌ O membro não possui esse título ativo." }, { quoted: msg });
                 }
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `📉 *TÍTULO CASADO:* O título *${tituloParaRemover}* foi destituído de @${alvoRemover.split('@')[0]} por ordem superior.`, mentions: [alvoRemover] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `📉 *TÍTULO CASSADO:* O título *${tituloParaRemover}* foi destituído de @${alvoRemover.split('@')[0]} por ordem superior.`, mentions: [alvoRemover] }, { quoted: msg });
             }
             break;
 
@@ -98,7 +112,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 return sock.sendMessage(from, { text: "❌ Uso correto: *!concederpermissao [@membro] [nome_do_comando]*" }, { quoted: msg });
             }
 
-            if (!db.usuarios[alvoPerm]) db.usuarios[alvoPerm] = { golds: 100, banco: 0 };
+            if (!db.usuarios[alvoPerm]) db.usuarios[alvoPerm] = criarUsuarioPadrao();
             if (!db.usuarios[alvoPerm].permissoes_especiais) db.usuarios[alvoPerm].permissoes_especiais = [];
 
             if (!db.usuarios[alvoPerm].permissoes_especiais.includes(cmdPerm)) {
@@ -118,7 +132,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'burlar':
-            if (!db.usuarios[sender]) db.usuarios[sender] = { golds: 100, banco: 0, trabalhos_hoje: 0, mineracoes_hoje: 0 };
+            if (!db.usuarios[sender]) db.usuarios[sender] = criarUsuarioPadrao();
             db.usuarios[sender].trabalhos_hoje = 0;
             db.usuarios[sender].mineracoes_hoje = 0;
             salvarDB(db);
@@ -142,11 +156,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'addgold':
-            const mencionado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || (args[0] ? args[0] + '@s.whatsapp.net' : null);
+            const mencionado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0] || (args[0] ? args[0].replace(/\D/g, '') + '@s.whatsapp.net' : null);
             const quantia = parseInt(args[1] || args[0]);
             if (!mencionado || isNaN(quantia)) return sock.sendMessage(from, { text: "❌ Uso: *!addgold [@membro] [quantidade]*" }, { quoted: msg });
-            
-            if (!db.usuarios[mencionado]) db.usuarios[mencionado] = { golds: 100, banco: 0 };
+
+            if (!db.usuarios[mencionado]) db.usuarios[mencionado] = criarUsuarioPadrao();
             db.usuarios[mencionado].golds += quantia;
             salvarDB(db);
             await sock.sendMessage(from, { text: `🪙 *BANCO DE LEICYBOT:* Injetados *${quantia} Moedas* na conta do usuário! 🌊` }, { quoted: msg });
@@ -156,8 +170,8 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const alvoRem = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             const quantiaRem = parseInt(args[1]);
             if (!alvoRem || isNaN(quantiaRem)) return sock.sendMessage(from, { text: "❌ Uso: *!remgold [@membro] [quantidade]*" }, { quoted: msg });
-            
-            if (!db.usuarios[alvoRem]) db.usuarios[alvoRem] = { golds: 100, banco: 0 };
+
+            if (!db.usuarios[alvoRem]) db.usuarios[alvoRem] = criarUsuarioPadrao();
             db.usuarios[alvoRem].golds = Math.max(0, db.usuarios[alvoRem].golds - quantiaRem);
             salvarDB(db);
             await sock.sendMessage(from, { text: `📉 *MULTA APLICADA:* Removidas *${quantiaRem} Moedas* da conta do infrator.` }, { quoted: msg });
@@ -178,12 +192,23 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
         case 'nomebot':
             if (!args[0]) return sock.sendMessage(from, { text: "❌ Digite o novo nome do bot." }, { quoted: msg });
+            db.config_bot.nome_bot = args.join(" ");
+            salvarDB(db);
             await sock.sendMessage(from, { text: `🤖 Meu nome interno foi alterado para *${args.join(" ")}*!` }, { quoted: msg });
             break;
 
         case 'transmitir':
             if (!args[0]) return sock.sendMessage(from, { text: "❌ Digite o texto da transmissão global." }, { quoted: msg });
-            await sock.sendMessage(from, { text: `📢 Transmissão enviada para as centrais de comando!` }, { quoted: msg });
+            const textoTransmissao = `📢 *TRANSMISSÃO OFICIAL DE OLDEN:*\n\n${args.join(" ")}`;
+            const gruposConhecidos = Object.keys(db.grupos || {});
+            let enviadosOk = 0;
+            for (const grupoId of gruposConhecidos) {
+                try {
+                    await sock.sendMessage(grupoId, { text: textoTransmissao });
+                    enviadosOk++;
+                } catch (e) { /* ignora grupo indisponível e segue para o próximo */ }
+            }
+            await sock.sendMessage(from, { text: `📢 Transmissão enviada com sucesso para *${enviadosOk}* de *${gruposConhecidos.length}* grupo(s) conhecido(s)!` }, { quoted: msg });
             break;
 
         case 'reiniciar':
@@ -192,9 +217,17 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
 
         case 'desligar':
-            await sock.sendMessage(from, { text: "💤 Desligando módulos de resposta por tempo indeterminado..." }, { quoted: msg });
+            db.config_bot.pausado = true;
+            salvarDB(db);
+            await sock.sendMessage(from, { text: "💤 Bot pausado! Vou ignorar comandos normais até você mandar *!ligar*." }, { quoted: msg });
             break;
-            
+
+        case 'ligar':
+            db.config_bot.pausado = false;
+            salvarDB(db);
+            await sock.sendMessage(from, { text: "🔌 Bot reativado! Todos os sistemas operando normalmente. 🌊" }, { quoted: msg });
+            break;
+
         default:
             break;
     }
