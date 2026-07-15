@@ -23,15 +23,15 @@ module.exports = async (sock, msg, comando, args) => {
 
         case 'sticker':
         case 's':
-            const tipoMsg = msg.message?.imageMessage || msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage ? 'imagem' : 
+            const tipoMsg = msg.message?.imageMessage || msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage ? 'imagem' :
                             msg.message?.videoMessage || msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage ? 'video' : null;
 
             if (!tipoMsg) {
                 return sock.sendMessage(from, { text: "❌ Você precisa responder a uma imagem ou vídeo curto com o comando *!sticker*!" }, { quoted: msg });
             }
 
-            const midiaObjeto = msg.message?.imageMessage || msg.message?.videoMessage || 
-                                msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage || 
+            const midiaObjeto = msg.message?.imageMessage || msg.message?.videoMessage ||
+                                msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage ||
                                 msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage;
 
             if (tipoMsg === 'video' && midiaObjeto.seconds > 10) {
@@ -40,8 +40,8 @@ module.exports = async (sock, msg, comando, args) => {
 
             await sock.sendMessage(from, { text: "⏳ Processando sua figurinha..." }, { quoted: msg });
 
-            const nomeArquivoTemporario = path.join(__dirname, `temp_${Date.now()}.${tipoMsg === 'imagem' ? 'jpg' : 'mp4'}`);
-            const nomeArquivoWebp = path.join(__dirname, `temp_${Date.now()}.webp`);
+            const nomeArquivoTemporario = path.join(__dirname, `temp_${Date.now()}_${Math.random().toString(36).slice(2)}.${tipoMsg === 'imagem' ? 'jpg' : 'mp4'}`);
+            const nomeArquivoWebp = path.join(__dirname, `temp_${Date.now()}_${Math.random().toString(36).slice(2)}.webp`);
 
             try {
                 const streamMidia = await downloadContentFromMessage(midiaObjeto, tipoMsg === 'imagem' ? 'image' : 'video');
@@ -49,10 +49,10 @@ module.exports = async (sock, msg, comando, args) => {
                 for await (const pedaco of streamMidia) {
                     bufferCompleto = Buffer.concat([bufferCompleto, pedaco]);
                 }
-                
+
                 fs.writeFileSync(nomeArquivoTemporario, bufferCompleto);
 
-                const comandoFfmpeg = tipoMsg === 'imagem' 
+                const comandoFfmpeg = tipoMsg === 'imagem'
                     ? `"${ffmpegPath}" -i "${nomeArquivoTemporario}" -vcodec libwebp -vf "scale='min(320,iw)':'min(320,ih)':force_original_aspect_ratio=decrease,fps=15,pad=320:320:(320-iw)/2:(320-ih)/2:color=0x00000000" "${nomeArquivoWebp}"`
                     : `"${ffmpegPath}" -i "${nomeArquivoTemporario}" -vcodec libwebp -fs 900k -vf "scale='min(240,iw)':'min(240,ih)':force_original_aspect_ratio=decrease,fps=12,pad=240:240:(240-iw)/2:(240-ih)/2:color=0x00000000" -loop 0 -an -vsync 0 "${nomeArquivoWebp}"`;
 
@@ -88,7 +88,7 @@ module.exports = async (sock, msg, comando, args) => {
                 }
                 const info = dados.data[0];
                 const fichaAnime = `🌸 *INFORMAÇÕES DE ANIME* 🌸\n\n🎬 *Título:* ${info.title}\n📺 *Tipo:* ${info.type || 'N/A'}\n🔄 *Episódios:* ${info.episodes || 'Em exibição'}\n⭐ *Nota:* ${info.score || 'Sem nota'}/10\n🏢 *Estúdio:* ${info.studios?.map(s => s.name).join(', ') || 'Desconhecido'}\n\n💬 *Sinopse (EN):* ${info.synopsis ? info.synopsis.slice(0, 400) + '...' : 'Sem sinopse disponível.'}`;
-                
+
                 if (info.images?.jpg?.image_url) {
                     await sock.sendMessage(from, { image: { url: info.images.jpg.image_url }, caption: fichaAnime }, { quoted: msg });
                 } else {
@@ -169,12 +169,10 @@ module.exports = async (sock, msg, comando, args) => {
         case 'definicao':
             if (!busca) return sock.sendMessage(from, { text: "❌ Digite uma palavra para procurar no dicionário." }, { quoted: msg });
             try {
-                const resDic = await fetch(`https://dicio-api-ca规模.vercel.app/api/v2/${encodeURIComponent(busca.toLowerCase())}`).catch(() => 
-                    fetch(`https://api.dicionario-aberto.net/word/${encodeURIComponent(busca.toLowerCase())}`)
-                );
+                const resDic = await fetch(`https://api.dicionario-aberto.net/word/${encodeURIComponent(busca.toLowerCase())}`);
                 const dadosDic = await resDic.json();
-                let def = Array.isArray(dadosDic) ? dadosDic[0]?.meanings?.join("\n") || dadosDic[0]?.xml : dadosDic.xml || "Significado indisponível.";
-                def = def.replace(/<[^>]*>/g, ''); // Limpa tags XML/HTML se houver
+                let def = Array.isArray(dadosDic) ? (dadosDic[0]?.meanings?.join("\n") || dadosDic[0]?.xml) : (dadosDic.xml || "Significado indisponível.");
+                def = (def || "Significado indisponível.").replace(/<[^>]*>/g, ''); // Limpa tags XML/HTML se houver
                 await sock.sendMessage(from, { text: `📖 *DICIONÁRIO:* *${busca}*\n\n${def.slice(0, 800)}` }, { quoted: msg });
             } catch (e) {
                 await sock.sendMessage(from, { text: `❌ Não consegui achar a definição para "${busca}".` }, { quoted: msg });
