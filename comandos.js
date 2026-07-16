@@ -3,6 +3,7 @@ const path = require('path');
 const ajudaTextos = require('./ajuda_textos');
 const interacaoTextos = require('./interacao_textos');
 const criarUsuarioPadrao = require('./modulos/usuarioPadrao');
+const { resolverIdentidade } = require('./modulos/jidUtils');
 
 // Importação dos módulos especializados
 const donoModulo = require('./modulos/dono');
@@ -23,11 +24,7 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
 
         const from = msg.key.remoteJid;
         const isGroup = from.endsWith('@g.us');
-        let sender = msg.key.participant || msg.key.remoteJid;
-
-        if (sender && sender.includes(':')) {
-            sender = sender.split(':')[0] + '@s.whatsapp.net';
-        }
+        let sender = resolverIdentidade(msg.key);
 
         const corpoMensagem = msg.message.conversation ||
                              msg.message.extendedTextMessage?.text ||
@@ -132,6 +129,11 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             } catch (e) {
                 return await sock.sendMessage(from, { text: textoMenuGeral }, { quoted: msg });
             }
+        }
+
+        if (comandoUnico === 'meujid') {
+            const diagTxt = `🔎 *DIAGNÓSTICO DE IDENTIDADE*\n\n➔ *participant (bruto):* ${msg.key.participant || '(vazio)'}\n➔ *participantAlt:* ${msg.key.participantAlt || '(não existe nessa versão do Baileys)'}\n➔ *participantPn:* ${msg.key.participantPn || '(não existe nessa versão do Baileys)'}\n➔ *remoteJid:* ${msg.key.remoteJid}\n➔ *Identidade resolvida (usada internamente):* ${sender}\n\n📋 Copie isso e mande de volta se algum comando de dono/adm não estiver te reconhecendo.`;
+            return sock.sendMessage(from, { text: diagTxt }, { quoted: msg });
         }
 
         if (comandoUnico === 'ajuda') {
