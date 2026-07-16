@@ -82,6 +82,15 @@ module.exports = async (sock, msg, comando, args) => {
             if (!busca) return sock.sendMessage(from, { text: "❌ Insira o nome de um anime. Ex: `!anime Naruto`" }, { quoted: msg });
             try {
                 const resposta = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(busca)}&limit=1`);
+
+                if (resposta.status === 429) {
+                    return sock.sendMessage(from, { text: "⏳ Muitas buscas seguidas! O serviço de animes está me limitando por instantes. Tente de novo daqui a pouco." }, { quoted: msg });
+                }
+                if (!resposta.ok) {
+                    console.error(`[ANIME] API retornou status ${resposta.status} para a busca "${busca}"`);
+                    return sock.sendMessage(from, { text: "❌ O serviço de animes está instável no momento. Tente novamente daqui a pouco." }, { quoted: msg });
+                }
+
                 const dados = await resposta.json();
                 if (!dados.data || dados.data.length === 0) {
                     return sock.sendMessage(from, { text: "❌ Nenhum anime encontrado com esse nome." }, { quoted: msg });
@@ -95,6 +104,7 @@ module.exports = async (sock, msg, comando, args) => {
                     await sock.sendMessage(from, { text: fichaAnime }, { quoted: msg });
                 }
             } catch (e) {
+                console.error('[ANIME] Erro de conexão:', e.message);
                 await sock.sendMessage(from, { text: "❌ Erro ao conectar com o banco de dados de animes." }, { quoted: msg });
             }
             break;
