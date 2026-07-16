@@ -1,27 +1,26 @@
 const criarUsuarioPadrao = require('./usuarioPadrao');
+const { resolverIdentidade } = require('./jidUtils');
 
 module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoComando = false) => {
     const from = msg.key.remoteJid;
-    let sender = msg.key.participant || msg.key.remoteJid;
+    let sender = resolverIdentidade(msg.key);
     const isGroup = from.endsWith('@g.us');
 
     if (!isGroup) {
         return sock.sendMessage(from, { text: "❌ Este comando só pode ser executado dentro de grupos! 🌊" }, { quoted: msg });
     }
 
-    // Sincronização da higienização do remetente
-    if (sender && sender.includes(':')) {
-        sender = sender.split(':')[0] + '@s.whatsapp.net';
-    }
-
     // Obter metadados do grupo para validar administradores
     const groupMetadata = await sock.groupMetadata(from);
     const participants = groupMetadata.participants;
     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+    // Alguns grupos representam o próprio bot via @lid; sock.user.lid (quando existe)
+    // é o identificador alternativo pra esse mesmo caso.
+    const botIdLid = sock.user.lid ? (sock.user.lid.includes('@') ? sock.user.lid.split(':')[0] : sock.user.lid.split(':')[0] + '@lid') : null;
 
     const adms = participants.filter(p => p.admin !== null).map(p => p.id);
     const isAdmin = adms.includes(sender);
-    const botIsAdmin = adms.includes(botId);
+    const botIsAdmin = adms.includes(botId) || (botIdLid && adms.includes(botIdLid));
 
     // Validação estrita de administrador OU permissão especial concedida pelo dono
     if (!isAdmin && !possuiPermissaoComando) {
