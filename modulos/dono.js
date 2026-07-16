@@ -1,13 +1,9 @@
 const criarUsuarioPadrao = require('./usuarioPadrao');
+const { resolverIdentidade } = require('./jidUtils');
 
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
-    let sender = msg.key.participant || msg.key.remoteJid;
-
-    // Remove qualquer ID de dispositivo ou sufixo extra (Evita o erro de não reconhecer dono)
-    if (sender && sender.includes(':')) {
-        sender = sender.split(':')[0] + '@s.whatsapp.net';
-    }
+    let sender = resolverIdentidade(msg.key);
 
     // ══════════════════════════════════════════════════════════════
     // ⚠️ CONFIGURAÇÃO DO ID DO DONO
