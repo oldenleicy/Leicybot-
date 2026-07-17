@@ -25,4 +25,12 @@ function resolverIdentidade(msgKey) {
     return participante;
 }
 
-module.exports = { resolverIdentidade };
+function participanteBruto(msgKey) {
+    let participante = msgKey.participant || msgKey.remoteJid;
+    if (participante && participante.includes(':')) {
+        participante = participante.split(':')[0] + '@s.whatsapp.net';
+    }
+    return participante;
+}
+
+module.exports = { resolverIdentidade, participanteBruto };
