@@ -2,8 +2,24 @@ const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
-const { Sticker, StickerTypes } = require('wa-sticker-formatter');
-const youtubedl = require('youtube-dl-exec');
+
+// Essas duas dependências são "pesadas" (binários nativos/baixados). Se
+// falharem ao carregar, isso NÃO deve derrubar o bot inteiro — só os
+// comandos que dependem delas (!sticker, !attp, !play, !video) ficam
+// indisponíveis, com uma mensagem clara em vez de crash.
+let Sticker = null, StickerTypes = null;
+try {
+    ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
+} catch (e) {
+    console.error('[MIDIA] wa-sticker-formatter não carregou:', e.message);
+}
+
+let youtubedl = null;
+try {
+    youtubedl = require('youtube-dl-exec');
+} catch (e) {
+    console.error('[MIDIA] youtube-dl-exec não carregou:', e.message);
+}
 
 // Tenta importar o ffmpeg-static de forma opcional para evitar quebras se não estiver instalado
 let ffmpegPath = null;
@@ -68,6 +84,10 @@ async function baixarMidiaDaMensagem(msg) {
 }
 
 async function criarFigurinha(sock, msg, from, legenda) {
+    if (!Sticker) {
+        return sock.sendMessage(from, { text: "❌ O recurso de figurinhas está temporariamente indisponível (biblioteca não carregou no servidor)." }, { quoted: msg });
+    }
+
     const { tipoMsg, buffer, erroLimite } = await baixarMidiaDaMensagem(msg);
 
     if (!tipoMsg) {
@@ -139,6 +159,9 @@ module.exports = async (sock, msg, comando, args) => {
             break;
 
         case 'attp':
+            if (!Sticker) {
+                return sock.sendMessage(from, { text: "❌ O recurso de figurinhas está temporariamente indisponível (biblioteca não carregou no servidor)." }, { quoted: msg });
+            }
             if (!busca) return sock.sendMessage(from, { text: "❌ Digite o texto. Ex: `!attp sharingam`" }, { quoted: msg });
 
             await sock.sendMessage(from, { text: "⏳ Gerando escrita animada..." }, { quoted: msg });
@@ -306,6 +329,9 @@ module.exports = async (sock, msg, comando, args) => {
 
         case 'play':
         case 'video': {
+            if (!youtubedl) {
+                return sock.sendMessage(from, { text: "❌ O recurso de download está temporariamente indisponível (biblioteca não carregou no servidor)." }, { quoted: msg });
+            }
             if (!busca) return sock.sendMessage(from, { text: `❌ Diga o nome ou cole o link. Ex: \`!${comando} Imagine Dragons Believer\`` }, { quoted: msg });
 
             await sock.sendMessage(from, { text: "⏳ Buscando e baixando, isso pode levar um tempinho..." }, { quoted: msg });
