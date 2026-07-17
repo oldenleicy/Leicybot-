@@ -1,88 +1,15 @@
-const makeWASocket = require('@whiskeysockets/baileys').default;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-
-// ─── REDE DE SEGURANÇA GLOBAL ───
-// Por padrão, uma Promise rejeitada sem tratamento derruba o processo Node
-// inteiro (incluindo a conexão do WhatsApp). Isso registra o erro no log
-// em vez de matar o bot. Não interfere em nada da lógica de conexão abaixo.
-process.on('unhandledRejection', (motivo) => {
-    console.error('[ERRO GLOBAL] Promise rejeitada sem tratamento:', motivo);
-});
-process.on('uncaughtException', (erro) => {
-    console.error('[ERRO GLOBAL] Exceção não capturada:', erro);
-});
-
-// ─── DIAGNÓSTICO DOS COMANDOS ───
-let lidarComComando = null;
-try {
-    const comandosModulo = require('./comandos');
-    lidarComComando = comandosModulo.lidarComComando || comandosModulo;
-} catch (erroDeImportacao) {
-    console.error('\n🚨 [ERRO CRÍTICO NO ARQUIVO COMANDOS.JS OU MÓDULOS] 🚨');
-    console.error(erroDeImportacao.stack);
-    console.error('──────────────────────────────────────────────────\n');
-    // Função temporária de segurança para o bot não ficar caindo em loop
-    lidarComComando = async () => { console.log('[SISTEMA] Mensagem ignorada pois o comandos.js contém erros.'); };
-}
+const { lidarComComando } = require('./comandos');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// ─── INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS ───
-const caminhoDB = path.join(__dirname, 'database.json');
-
-const estruturaPadrao = {
-    usuarios: {},
-    grupos: {},
-    config_bot: {
-        nome_bot: "LeicyBot",
-        url_foto_menu: "https://i.imgur.com/Kdf946S.png",
-        manutencao: false,
-        pausado: false,
-        comandos_desativados: [],
-        titulos_criados: ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"],
-        ddi_permitido: "258"
-    }
-};
-
-let db = estruturaPadrao;
-
-try {
-    if (fs.existsSync(caminhoDB)) {
-        const conteudo = fs.readFileSync(caminhoDB, 'utf-8').trim();
-        if (conteudo && conteudo !== "") {
-            db = JSON.parse(conteudo);
-            if (!db.config_bot) db.config_bot = estruturaPadrao.config_bot;
-            if (!db.usuarios) db.usuarios = estruturaPadrao.usuarios;
-            if (!db.grupos) db.grupos = estruturaPadrao.grupos;
-        } else {
-            fs.writeFileSync(caminhoDB, JSON.stringify(estruturaPadrao, null, 4), 'utf-8');
-        }
-    } else {
-        fs.writeFileSync(caminhoDB, JSON.stringify(estruturaPadrao, null, 4), 'utf-8');
-    }
-} catch (e) {
-    console.error('[DATABASE] Arquivo corrompido ou vazio detectado! Aplicando estrutura de segurança.', e.message);
-    db = estruturaPadrao;
-    fs.writeFileSync(caminhoDB, JSON.stringify(estruturaPadrao, null, 4), 'utf-8');
-}
-
-function salvarDB(dadosNovos) {
-    try {
-        const caminhoTmp = path.join(__dirname, 'database.tmp');
-        fs.writeFileSync(caminhoTmp, JSON.stringify(dadosNovos, null, 4), 'utf-8');
-        fs.renameSync(caminhoTmp, caminhoDB);
-    } catch (error) {
-        console.error("[DATABASE] Erro crítico ao salvar o banco de dados: ", error.message);
-    }
-}
-// ─────────────────────────────────────────────────────────────
-
-const MEU_NUMERO_WHATSAPP = '258840504242';
+// ⚠️ PREENCHA AQUI: 55 + DDD + Seu Número (Apenas números, como string)
+const MEU_NUMERO_WHATSAPP = '258840504242'; 
 
 let statusConexao = "Iniciando aplicação...";
 let botSocket = null;
@@ -114,11 +41,12 @@ function limparSessaoInvalida() {
 async function iniciarBot() {
     const pastaAuth = path.join(__dirname, 'auth_info');
 
+    // ─── NOVO: RECONSTRÓI A SESSÃO A PARTIR DA VARIÁVEL DO RENDER CASO ELA EXISTA ───
     if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
         try {
             fs.mkdirSync(pastaAuth, { recursive: true });
             const sessionData = JSON.parse(Buffer.from(process.env.WA_SESSION_DATA, 'base64').toString('utf-8'));
-
+            
             Object.keys(sessionData).forEach(file => {
                 fs.writeFileSync(path.join(pastaAuth, file), JSON.stringify(sessionData[file]));
             });
@@ -127,68 +55,90 @@ async function iniciarBot() {
             console.error('[ERRO VARIÁVEL SESSÃO]: Dados inválidos ou corrompidos na variável.', e.message);
         }
     }
+    // ───────────────────────────────────────────────────────────────────────────────
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-    const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307], isLatest: true }));
+    
+    // Busca dinamicamente a última versão suportada pelo ecossistema web do WhatsApp
+    const { version, isLatest } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307], isLatest: true }));
     console.log(`[WHATSAPP] Utilizando a versão de protocolo: ${version.join('.')}`);
 
+    // SOLUÇÃO DO ERRO 428: Mapeamento cirúrgico de propriedades do navegador
     botSocket = makeWASocket({
         version,
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        mobile: false,
-        browser: ['Mac OS', 'Chrome', '124.0.0.0']
+        mobile: false, // Força a API a se comportar como Desktop Web (Evita rejeição de payload)
+        browser: ['Mac OS', 'Chrome', '124.0.0.0'] 
     });
 
+    // Monitora e salva as atualizações de chaves
     botSocket.ev.on('creds.update', async () => {
         await saveCreds();
+
+        // ─── NOVO: GERA O TEXTO BASE64 PARA VOCÊ COPIAR DO LOG LOGO APÓS LOGAR ───
         try {
             if (fs.existsSync(pastaAuth)) {
                 const files = fs.readdirSync(pastaAuth);
                 const sessionObj = {};
                 files.forEach(file => {
+                    // Ignora arquivos vazios ou pastas acidentais
                     if (fs.statSync(path.join(pastaAuth, file)).isFile()) {
                         sessionObj[file] = JSON.parse(fs.readFileSync(path.join(pastaAuth, file), 'utf-8'));
                     }
                 });
                 const base64String = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
+                
                 console.log('\n==================================================');
-                console.log('📋 WA_SESSION_DATA ATUALIZADA NO CONSOLE');
+                console.log('📋 COPIE A LINHA GIGANTE ABAIXO E SALVE NO RENDER COMO WA_SESSION_DATA:');
+                console.log(base64String);
                 console.log('==================================================\n');
             }
-        } catch (e) {}
+        } catch (e) {
+            // Ignora se der erro ao tentar ler arquivos parciais na primeira inicialização
+        }
+        // ───────────────────────────────────────────────────────────────────────
     });
 
+    // Se o bot não estiver registrado localmente, faz o disparo limpo do código de 8 dígitos
     if (!botSocket.authState.creds.registered) {
         statusConexao = "Aguardando geração do código de pareamento...";
+        
+        // Timeout estratégico para esperar o handshake inicial do WebSocket concluir antes de pedir o código
         setTimeout(async () => {
             try {
                 console.log(`[SISTEMA] Solicitando código de pareamento seguro para: ${MEU_NUMERO_WHATSAPP}`);
                 let codigo = await botSocket.requestPairingCode(MEU_NUMERO_WHATSAPP);
+                
                 statusConexao = `Código gerado: ${codigo}`;
                 console.log('\n==================================================');
                 console.log(`🔑 SEU CÓDIGO DE EMPARELHAMENTO DO WHATSAPP: ${codigo}`);
                 console.log('==================================================\n');
             } catch (err) {
-                console.error('[ERRO CRÍTICO 428]: Forçando reinicialização limpa...');
+                console.error('[ERRO CRÍTICO 428 CONVERTIDO]: Falha ao requisitar código. Forçando reinicialização limpa...');
+                console.error(err.message);
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
             }
-        }, 10000);
+        }, 10000); // 10 segundos garantem estabilidade de rede no Render
     }
 
     botSocket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
+
         if (connection === 'close') {
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             statusConexao = `Desconectado (Status: ${statusCode})`;
             console.log(`[CONEXÃO] Fechada com código: ${statusCode}`);
 
+            // Prevenção de loop para erros estruturais de credenciais (401, 403, 405, 428)
             if ([401, 403, 405, 428, DisconnectReason.loggedOut].includes(statusCode)) {
+                console.log('[ALERTA] Credencial corrompida detectada. Limpando dados...');
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
             } else {
+                // Erros comuns de oscilação do Render (Reconexão simples)
                 setTimeout(() => iniciarBot(), 8000);
             }
         } else if (connection === 'open') {
@@ -201,58 +151,13 @@ async function iniciarBot() {
         if (m.type !== 'notify') return;
         for (const msg of m.messages) {
             if (!msg.key.fromMe && msg.message) {
-                // Captura erros internos de comando de maneira segura para não crashar o index.js
-                await lidarComComando(botSocket, msg, db, salvarDB).catch(e => console.error('[ERRO INTERNO CAPTURADO]:', e));
+                await lidarComComando(botSocket, msg).catch(e => console.error('[ERRO COMANDO]:', e));
             }
-        }
-    });
-
-    // ─── NOVO: ENTRADA/SAÍDA DE MEMBROS — boas-vindas e bloqueio de DDI estrangeiro ───
-    // Isso não existia antes; sem isso, os comandos !boasvindas e !fakes só ligavam uma
-    // flag no banco mas nada de fato acontecia quando alguém entrava no grupo.
-    botSocket.ev.on('group-participants.update', async (update) => {
-        try {
-            const { id: groupId, participants, action } = update;
-            if (action !== 'add') return;
-
-            if (!db.grupos) db.grupos = {};
-            const gConfig = db.grupos[groupId];
-            if (!gConfig) return; // grupo ainda não tem configuração (nenhum comando !adm rodado nele ainda)
-
-            for (const participantJid of participants) {
-                const numero = participantJid.split('@')[0];
-
-                // FAKES: expulsa DDI fora do padrão configurado
-                if (gConfig.fakes) {
-                    const ddiPermitido = (db.config_bot && db.config_bot.ddi_permitido) || '258';
-                    if (!numero.startsWith(ddiPermitido)) {
-                        try {
-                            await botSocket.groupParticipantsUpdate(groupId, [participantJid], 'remove');
-                            await botSocket.sendMessage(groupId, { text: `🌐 Número estrangeiro @${numero} removido automaticamente (DDI fora do padrão +${ddiPermitido}).`, mentions: [participantJid] });
-                        } catch (e) {
-                            console.error('[FAKES] Falha ao remover:', e.message);
-                        }
-                        continue; // não manda boas-vindas pra quem já foi expulso
-                    }
-                }
-
-                // BOAS-VINDAS
-                if (gConfig.boasvindas) {
-                    const slotAtivo = gConfig.bv_ativo || 'bv1';
-                    const textoBV = gConfig[slotAtivo] || gConfig.bv1 || 'Seja bem-vindo(a) ao grupo! 🌊';
-                    try {
-                        await botSocket.sendMessage(groupId, { text: `@${numero} ${textoBV}`, mentions: [participantJid] });
-                    } catch (e) {
-                        console.error('[BOAS-VINDAS] Falha ao enviar:', e.message);
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('[GROUP-UPDATE] Erro:', e.message);
         }
     });
 }
 
+// Início do sistema com atraso de proteção contra loops agressivos no deploy do Render
 setTimeout(() => {
     iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
 }, 2000);
