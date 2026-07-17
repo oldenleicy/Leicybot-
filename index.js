@@ -5,6 +5,17 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+// ─── REDE DE SEGURANÇA GLOBAL ───
+// Por padrão, uma Promise rejeitada sem tratamento derruba o processo Node
+// inteiro (incluindo a conexão do WhatsApp). Isso registra o erro no log
+// em vez de matar o bot. Não interfere em nada da lógica de conexão abaixo.
+process.on('unhandledRejection', (motivo) => {
+    console.error('[ERRO GLOBAL] Promise rejeitada sem tratamento:', motivo);
+});
+process.on('uncaughtException', (erro) => {
+    console.error('[ERRO GLOBAL] Exceção não capturada:', erro);
+});
+
 // ─── DIAGNÓSTICO DOS COMANDOS ───
 let lidarComComando = null;
 try {
