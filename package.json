@@ -1,8 +1,11 @@
 {
   "name": "bot-leicybot-resiliente",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Bot estável sem erro 428",
   "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node index.js"
   },
@@ -10,6 +13,8 @@
     "@whiskeysockets/baileys": "^6.7.3",
     "express": "^4.19.2",
     "pino": "^9.1.0",
-    "ffmpeg-static": "^5.2.0"
+    "ffmpeg-static": "^5.2.0",
+    "wa-sticker-formatter": "^4.4.4",
+    "youtube-dl-exec": "^3.0.10"
   }
 }
