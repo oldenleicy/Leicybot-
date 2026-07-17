@@ -167,7 +167,7 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         }
 
         // MÍDIA
-        const cmdsMidia = ['menumidia', 'sticker', 's', 'copiarsticker', 'anime', 'clima', 'google', 'wikipedia', 'letra', 'qrcode', 'encurtar', 'definicao', 'frase', 'pinterest', 'wallpaper', 'play', 'video'];
+        const cmdsMidia = ['menumidia', 'sticker', 's', 'sticker-', 's-', 'attp', 'copiarsticker', 'anime', 'clima', 'google', 'wikipedia', 'letra', 'qrcode', 'encurtar', 'definicao', 'frase', 'pinterest', 'wallpaper', 'play', 'video'];
         if (cmdsMidia.includes(comandoUnico)) {
             const executarMidia = midiaModulo.midiaModulo || midiaModulo.default || midiaModulo;
             return await executarMidia(sock, msg, comandoUnico, argumentos, db, salvarDB);
