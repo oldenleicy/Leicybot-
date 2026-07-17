@@ -184,6 +184,18 @@ module.exports = {
 ╚═══════════════════════════════════════╝
 💧 *O que é?* Atalho direto e rápido para o comando \`!sticker\`.`,
 
+            's-': `╔═══════════════════════════════════════╗
+          🖼️  𝗚𝗨𝗜𝗔: !s- / !sticker-  🖼️
+╚═══════════════════════════════════════╝
+💧 *O que é?* A mesma fábrica de figurinhas, mas com legenda.
+🌊 *Como usar:* Responda uma imagem ou vídeo digitando \`!s- texto aqui\`. O texto é desenhado na própria figurinha. Sem o traço e sem texto, use só \`!s\` para a figurinha normal.`,
+
+            attp: `╔═══════════════════════════════════════╗
+          🌈  𝗚𝗨𝗜𝗔: !attp  🌈
+╚═══════════════════════════════════════╝
+💧 *O que é?* Figurinha animada com texto oscilando em cores (estilo LED).
+🌊 *Como usar:* \`!attp texto aqui\`. Não precisa responder nada, o bot gera a figurinha do zero.`,
+
             copiarsticker: `╔═══════════════════════════════════════╗
           🖼️  𝗚𝗨𝗜𝗔: !copiarsticker  🖼️
 ╚═══════════════════════════════════════╝
