@@ -1,9 +1,10 @@
 const criarUsuarioPadrao = require('./usuarioPadrao');
-const { resolverIdentidade } = require('./jidUtils');
+const { resolverIdentidade, participanteBruto } = require('./jidUtils');
 
 module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoComando = false) => {
     const from = msg.key.remoteJid;
     let sender = resolverIdentidade(msg.key);
+    const senderBruto = participanteBruto(msg.key);
     const isGroup = from.endsWith('@g.us');
 
     if (!isGroup) {
@@ -18,8 +19,18 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
     // é o identificador alternativo pra esse mesmo caso.
     const botIdLid = sock.user.lid ? (sock.user.lid.includes('@') ? sock.user.lid.split(':')[0] : sock.user.lid.split(':')[0] + '@lid') : null;
 
-    const adms = participants.filter(p => p.admin !== null).map(p => p.id);
-    const isAdmin = adms.includes(sender);
+    // Lista de admins, incluindo qualquer identificador alternativo (telefone) que o
+    // Baileys exponha por participante — protege contra o grupo listar admins via @lid.
+    const adms = [];
+    participants.forEach(p => {
+        if (p.admin !== null) {
+            adms.push(p.id);
+            const alt = p.phoneNumber || p.pn || p.jid;
+            if (alt && alt !== p.id) adms.push(alt);
+        }
+    });
+
+    const isAdmin = adms.includes(sender) || adms.includes(senderBruto);
     const botIsAdmin = adms.includes(botId) || (botIdLid && adms.includes(botIdLid));
 
     // Validação estrita de administrador OU permissão especial concedida pelo dono
