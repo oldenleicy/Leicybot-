@@ -1,9 +1,35 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+
+// ─── CONTORNO DO BUG CONHECIDO DO BAILEYS (issue #2679) ───
+// fetchLatestBaileysVersion() às vezes retorna uma versão desatualizada do
+// WhatsApp Web dizendo "isLatest: true" — o WhatsApp aceita a conexão mas
+// recusa completar o pareamento do aparelho. fetchLatestWaWebVersion() busca
+// a versão real mais atual e evita esse problema.
+async function obterVersaoProtocolo() {
+    try {
+        if (typeof fetchLatestWaWebVersion === 'function') {
+            const { version } = await fetchLatestWaWebVersion();
+            console.log('[WHATSAPP] Versão obtida via fetchLatestWaWebVersion.');
+            return version;
+        }
+    } catch (e) {
+        console.error('[WHATSAPP] fetchLatestWaWebVersion falhou:', e.message);
+    }
+    try {
+        const { version } = await fetchLatestBaileysVersion();
+        console.log('[WHATSAPP] Usando fetchLatestBaileysVersion (atenção: pode retornar versão desatualizada — ver issue #2679 do Baileys).');
+        return version;
+    } catch (e) {
+        console.error('[WHATSAPP] fetchLatestBaileysVersion também falhou:', e.message);
+    }
+    console.log('[WHATSAPP] Usando versão fixa conhecida (julho/2026) como último recurso.');
+    return [2, 3000, 1042466098];
+}
 
 // ─── REDE DE SEGURANÇA GLOBAL ───
 // Por padrão, uma Promise rejeitada sem tratamento derruba o processo Node
@@ -133,7 +159,7 @@ async function iniciarBot() {
     }
 
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-    const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1015901307], isLatest: true }));
+    const version = await obterVersaoProtocolo();
     console.log(`[WHATSAPP] Utilizando a versão de protocolo: ${version.join('.')}`);
 
     botSocket = makeWASocket({
