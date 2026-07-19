@@ -226,6 +226,7 @@ async function iniciarBot() {
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             statusConexao = `Desconectado (Status: ${statusCode})`;
             console.log(`[CONEXÃO] Fechada com código: ${statusCode}`);
+            console.log(`[CONEXÃO] Detalhe do erro real:`, lastDisconnect?.error?.message || lastDisconnect?.error || '(nenhum detalhe disponível)');
 
             if ([401, 403, 405, 428, DisconnectReason.loggedOut].includes(statusCode)) {
                 limparSessaoInvalida();
