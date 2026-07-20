@@ -1,3 +1,13 @@
+// ─── GARANTE QUE O "crypto" GLOBAL EXISTA (independente da versão do Node) ───
+// Precisa vir ANTES de qualquer outro require, incluindo o do Baileys.
+if (typeof globalThis.crypto === 'undefined') {
+    const nodeCrypto = require('crypto');
+    if (nodeCrypto.webcrypto) {
+        globalThis.crypto = nodeCrypto.webcrypto;
+        console.log('[SISTEMA] Polyfill de crypto global aplicado.');
+    }
+}
+
 const makeWASocket = require('@whiskeysockets/baileys').default;
 const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, fetchLatestWaWebVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
