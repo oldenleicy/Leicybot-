@@ -195,6 +195,8 @@ async function iniciarBot() {
                 const base64String = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
                 console.log('\n==================================================');
                 console.log('📋 WA_SESSION_DATA ATUALIZADA NO CONSOLE');
+                console.log('==================================================');
+                console.log(base64String);
                 console.log('==================================================\n');
             }
         } catch (e) {
@@ -304,6 +306,12 @@ async function iniciarBot() {
     });
 }
 
-setTimeout(() => {
-    iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
-}, 2000);
+if (process.env.PAUSAR_WHATSAPP === 'true') {
+    statusConexao = "PAUSADO manualmente (PAUSAR_WHATSAPP=true) — nenhuma tentativa de conexão será feita.";
+    console.log('[SISTEMA] PAUSAR_WHATSAPP está ativo — o bot NÃO vai tentar se conectar ao WhatsApp.');
+    console.log('[SISTEMA] Pra tentar de novo, apague essa variável (ou mude pra false) no Railway e faça redeploy.');
+} else {
+    setTimeout(() => {
+        iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
+    }, 2000);
+}
