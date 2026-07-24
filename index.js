@@ -188,8 +188,14 @@ async function iniciarBot() {
                 const files = fs.readdirSync(pastaAuth);
                 const sessionObj = {};
                 files.forEach(file => {
-                    if (fs.statSync(path.join(pastaAuth, file)).isFile()) {
-                        sessionObj[file] = JSON.parse(fs.readFileSync(path.join(pastaAuth, file), 'utf-8'));
+                    try {
+                        if (fs.statSync(path.join(pastaAuth, file)).isFile()) {
+                            sessionObj[file] = JSON.parse(fs.readFileSync(path.join(pastaAuth, file), 'utf-8'));
+                        }
+                    } catch (erroArquivo) {
+                        // Um arquivo específico pode estar sendo escrito nesse instante — pula
+                        // só esse arquivo em vez de derrubar a leitura de todos os outros.
+                        console.error(`[SISTEMA] Não consegui ler ${file} agora (provavelmente sendo escrito), ignorando nessa rodada.`);
                     }
                 });
                 const base64String = Buffer.from(JSON.stringify(sessionObj)).toString('base64');
