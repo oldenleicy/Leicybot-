@@ -349,7 +349,11 @@ module.exports = async (sock, msg, comando, args) => {
                     preferFreeFormats: true,
                     ffmpegLocation: ffmpegPath,
                     noPlaylist: true,
-                    matchFilter: 'duration < 600' // protege o Railway grátis: bloqueia vídeos > 10min
+                    matchFilter: 'duration < 600', // protege o Railway grátis: bloqueia vídeos > 10min
+                    // Finge ser o app Android do YouTube em vez do site normal — na maioria dos
+                    // casos evita o bloqueio "Sign in to confirm you're not a bot" sem precisar
+                    // de login nem cookies.
+                    extractorArgs: 'youtube:player_client=android'
                 };
 
                 if (comando === 'play') {
@@ -378,7 +382,12 @@ module.exports = async (sock, msg, comando, args) => {
                 fs.unlinkSync(caminhoCompleto);
             } catch (e) {
                 console.error('[PLAY/VIDEO] Erro:', e.message || e);
-                await sock.sendMessage(from, { text: "❌ Falha ao baixar. Pode ser vídeo muito longo, restrito, ou o serviço está indisponível." }, { quoted: msg });
+                const mensagemErro = (e.message || '').toLowerCase();
+                if (mensagemErro.includes('sign in') || mensagemErro.includes('bot')) {
+                    await sock.sendMessage(from, { text: "❌ O YouTube bloqueou esse download por suspeitar de automação. Tenta de novo daqui a pouco — se continuar acontecendo sempre, me avisa." }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(from, { text: "❌ Falha ao baixar. Pode ser vídeo muito longo, restrito, ou o serviço está indisponível." }, { quoted: msg });
+                }
             }
             break;
         }
