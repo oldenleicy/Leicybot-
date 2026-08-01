@@ -1,11 +1,13 @@
+// modulos/diversao.js
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const interacaoTextos = require('../interacao_textos');
+const { obterAlvo } = require('./jidUtils');
 
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
     const sender = msg.key.participant || msg.key.remoteJid;
 
-    // Correção: Inicialização de segurança para evitar crash fatal caso o usuário não exista no banco
+    // Inicialização de segurança
     if (!db.usuarios[sender]) {
         db.usuarios[sender] = criarUsuarioPadrao();
     }
@@ -60,16 +62,17 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const subCategoriaCmd = comando.split('/')[1]?.toLowerCase();
 
     switch (comandoBase) {
-        case 'menujogos':
+        case 'menujogos': {
             const menuJogosTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🎮  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗗𝗜𝗩𝗘𝗥𝗦𝗔𝗢  🎮      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 A zoeira e os mini-games oficiais do grupo!\n\n ➔ *!duelo [@user] [aposta]* - Combate valendo Golds.\n ➔ *!casar [@user]* - Faz o pedido oficial de matrimônio.\n ➔ *!aceitar* - Consuma a união sob a benção de Olden.\n ➔ *!divorciar* - Encerra o casamento virtual.\n ➔ *!beijar / !bater / !abracar [@user]* - Ações textuais cômicas.\n ➔ *!gado* - Mede o nível de paixão boba do membro.\n ➔ *!gostoso* - Avalia a latência da sua beleza.\n ➔ *!curiosidade* - Fato aleatório global do robô.\n ➔ *!curiosidade/[categoria]* - Alvo estrito:\n    _(sports, games, ciencia, arte, filmes, historia, animes, tecnologia, natureza)_\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuJogosTxt }, { quoted: msg });
             break;
+        }
 
-        case 'duelo':
-            const adversario = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+        case 'duelo': {
+            const adversario = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
             const aposta = parseInt(args[1] || args[0]);
 
-            if (!adversario) return sock.sendMessage(from, { text: "❌ Quem você está desafiando? Marque o alvo! Ex: `!duelo @membro 100`" }, { quoted: msg });
+            if (!adversario) return sock.sendMessage(from, { text: "❌ Quem você está desafiando? Marque ou responda ao alvo! Ex: `!duelo @membro 100`" }, { quoted: msg });
             if (adversario === sender) return sock.sendMessage(from, { text: "🥴 Duelo contra si mesmo? Você bateu a cabeça em alguma pedra à beira-mar?" }, { quoted: msg });
             if (isNaN(aposta) || aposta <= 0) return sock.sendMessage(from, { text: "❌ Defina uma quantia válida de Golds para apostar no combate!" }, { quoted: msg });
 
@@ -95,10 +98,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 await sock.sendMessage(from, { text: `⚔️ *💥 DUELO SUPREMO:* @${sender.split('@')[0]} tentou dar um soco cinematográfico, mas escorregou feio numa casca de banana! @${adversario.split('@')[0]} venceu o combate e levou *${aposta} Golds*! 💧`, mentions: [sender, adversario] }, { quoted: msg });
             }
             break;
+        }
 
-        case 'casar':
-            const pretendente = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!pretendente) return sock.sendMessage(from, { text: "❌ Marque a pessoa sortuda (ou azarada) para fazer o pedido de casamento!" }, { quoted: msg });
+        case 'casar': {
+            const pretendente = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!pretendente) return sock.sendMessage(from, { text: "❌ Marque ou responda à pessoa sortuda (ou azarada) para fazer o pedido de casamento!" }, { quoted: msg });
             if (pretendente === sender) return sock.sendMessage(from, { text: "🛑 Casar com você mesmo? O nível de carência superou as expectativas do bot." }, { quoted: msg });
 
             if (u.conjugue) return sock.sendMessage(from, { text: "❌ Você já é casado! Use *!divorciar* antes de pedir alguém em casamento." }, { quoted: msg });
@@ -113,8 +117,9 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
             await sock.sendMessage(from, { text: `💍 *PEDIDO DE CASAMENTO:* 📢 Atenção chat! @${sender.split('@')[0]} está oficialmente de joelhos propondo casamento para @${pretendente.split('@')[0]}!\n\n👉 Alvo do pedido, digite *!aceitar* para confirmar ou mude de assunto imediatamente! 🌊`, mentions: [sender, pretendente] }, { quoted: msg });
             break;
+        }
 
-        case 'aceitar':
+        case 'aceitar': {
             if (!u.pedido_casamento) return sock.sendMessage(from, { text: "❌ Ninguém te pediu em casamento recentemente... Que situação deprimente! 💧" }, { quoted: msg });
             const noivo = u.pedido_casamento;
 
@@ -132,8 +137,9 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             const casorioTxt = `░▒▓█████████████████████████████████████▓▒░\n💍   𝗠𝗔𝗧𝗥𝗜𝗠𝗢𝗡𝗜𝗢 𝗩𝗜𝗥𝗧𝗨𝗔𝗟 𝗖𝗢𝗡𝗦𝗨𝗠𝗔𝗗𝗢   💍\n░▒▓████████▒▒▓██████████████████████████▓▒░\n🔔 Soltem os fogos! sob as ordens e benção do comandante supremo Olden, @${sender.split('@')[0]} e @${noivo.split('@')[0]} agora estão casados virtualmente!\n\n❤️ Que a união dure até o próximo reset de banco de dados! 😉🎉`;
             await sock.sendMessage(from, { text: casorioTxt, mentions: [sender, noivo] }, { quoted: msg });
             break;
+        }
 
-        case 'divorciar':
+        case 'divorciar': {
             if (!u.conjugue) return sock.sendMessage(from, { text: "🤔 Divorciar de quem? Você está solteiro e livre como as ondas do mar!" }, { quoted: msg });
             const ex = u.conjugue;
 
@@ -143,10 +149,11 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
             await sock.sendMessage(from, { text: `💔 *FIM DA LINHA:* O amor acabou! @${sender.split('@')[0]} assinou os papéis de divórcio virtuais e chutou a conta de @${ex.split('@')[0]} para escanteio! O tribunal do Leicybot- decretou a solteirice!`, mentions: [sender, ex] }, { quoted: msg });
             break;
+        }
 
-        case 'beijar':
-            const beijado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!beijado) return sock.sendMessage(from, { text: "❌ Marque quem você deseja beijar!" }, { quoted: msg });
+        case 'beijar': {
+            const beijado = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!beijado) return sock.sendMessage(from, { text: "❌ Marque ou responda a quem você deseja beijar!" }, { quoted: msg });
 
             if (!db.usuarios[beijado]) {
                 db.usuarios[beijado] = criarUsuarioPadrao();
@@ -157,16 +164,18 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             salvarDB(db);
             await sock.sendMessage(from, { text: `💋 @${sender.split('@')[0]} deu um beijo cinematográfico de tirar o fôlego em @${beijado.split('@')[0]}! O amor está flutuando no chat! 💕`, mentions: [sender, beijado] }, { quoted: msg });
             break;
+        }
 
-        case 'bater':
-            const agredido = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!agredido) return sock.sendMessage(from, { text: "❌ Marque quem você quer cobrir na paulada!" }, { quoted: msg });
+        case 'bater': {
+            const agredido = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!agredido) return sock.sendMessage(from, { text: "❌ Marque ou responda a quem você quer cobrir na paulada!" }, { quoted: msg });
             await sock.sendMessage(from, { text: `💥 *POW!* @${sender.split('@')[0]} pegou uma cadeira dobrável virtual e quebrou nas costas de @${agredido.split('@')[0]}! Alguém traga um curativo urgentemente! 🩹`, mentions: [sender, agredido] }, { quoted: msg });
             break;
+        }
 
-        case 'abracar':
-            const abracado = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!abracado) return sock.sendMessage(from, { text: "❌ Marque quem vai receber esse abraço!" }, { quoted: msg });
+        case 'abracar': {
+            const abracado = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!abracado) return sock.sendMessage(from, { text: "❌ Marque ou responda a quem vai receber esse abraço!" }, { quoted: msg });
 
             if (!db.usuarios[abracado]) {
                 db.usuarios[abracado] = criarUsuarioPadrao();
@@ -177,21 +186,23 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             salvarDB(db);
             await sock.sendMessage(from, { text: `🫂 @${sender.split('@')[0]} deu um abraço apertado e confortante em @${abracado.split('@')[0]}. Que momento lindo de amizade pura! 💧`, mentions: [sender, abracado] }, { quoted: msg });
             break;
+        }
 
-        case 'gado':
+        case 'gado': {
             const gadoPorcentagem = Math.floor(Math.random() * 101);
             const gadoTxt = `╔═══════════════════════════════════════╗\n          🐂  𝗧𝗘𝗥𝗠𝗢𝗠𝗘𝗧𝗥𝗢 𝗗𝗘 𝗚𝗔𝗗𝗢  🐂\n╚═══════════════════════════════════════╝\n👤 𝗠𝗲𝗺𝗯𝗿𝗼: @${sender.split('@')[0]}\n📊 𝗡𝗶́𝘃𝗲𝗹: [${gadoPorcentagem}%]\n\n🔍 *Análise do Bot:* \n${interacaoTextos.respostasGado(gadoPorcentagem)}\n╚═══════════════════════════════════════╝`;
             await sock.sendMessage(from, { text: gadoTxt, mentions: [sender] }, { quoted: msg });
             break;
+        }
 
-        case 'gostoso':
+        case 'gostoso': {
             const gostosoPorcentagem = Math.floor(Math.random() * 101);
             const gostosoTxt = `╔═══════════════════════════════════════╗\n         🔥  𝗔𝗩𝗔𝗟𝗜𝗔𝗖𝗔𝗢 𝗗𝗘 𝗕𝗘𝗟𝗘𝗭𝗔  🔥\n╚═══════════════════════════════════════╝\n👤 𝗠𝗲𝗺𝗯𝗿𝗼: @${sender.split('@')[0]}\n📊 𝗡𝗶́𝘃𝗲𝗹: [${gostosoPorcentagem}%]\n\n🔍 *Veredito Técnico:* \n${interacaoTextos.respostasGostoso(gostosoPorcentagem)}\n╚═══════════════════════════════════════╝`;
             await sock.sendMessage(from, { text: gostosoTxt, mentions: [sender] }, { quoted: msg });
             break;
+        }
 
-        case 'curiosidade':
-            // Lógica otimizada e blindada para capturar subcategorias via !curiosidade/categoria ou parâmetros comuns
+        case 'curiosidade': {
             let catAlvo = subCategoriaCmd || args[0]?.toLowerCase();
 
             if (catAlvo && bancoCuriosidades[catAlvo.trim()]) {
@@ -200,12 +211,13 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 return sock.sendMessage(from, { text: `░▒▓ 🧠 𝗖𝗨𝗥𝗜𝗢𝗦𝗜𝗗𝗔𝗗𝗘: ${catAlvo.toUpperCase()} ▓▒░\n\n💡 *Você sabia?*\n${fatoEscolhido}` }, { quoted: msg });
             }
 
-            // Fallback global genérico estável
+            // Fallback global genérico
             const chavesGlobais = Object.keys(bancoCuriosidades);
             const rChave = chavesGlobais[Math.floor(Math.random() * chavesGlobais.length)];
             const rFato = bancoCuriosidades[rChave][Math.floor(Math.random() * bancoCuriosidades[rChave].length)];
             await sock.sendMessage(from, { text: `░▒▓ 🧠 𝗖𝗨𝗥𝗜𝗢𝗦𝗜𝗗𝗔𝗗𝗘 𝗚𝗟𝗢𝗕𝗔𝗟 ▓▒░\n\n💡 *Fato interessante:* \n${rFato}\n\n👉 Dica: Você pode filtrar usando: *!curiosidade/animes*, *!curiosidade/games*, *!curiosidade/historia*, etc!` }, { quoted: msg });
             break;
+        }
 
         default:
             break;
