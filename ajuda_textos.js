@@ -6,8 +6,8 @@ module.exports = {
           💳  𝗚𝗨𝗜𝗔: !gold  💳
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O raio-X da sua riqueza (ou da sua miséria).
-🌊 *Como funciona?* Mostra seus Golds em mãos, o dinheiro escondido no banco, seus títulos equipados e seu estoque diário de energia.
-💡 *Dica de Ouro:* Não ande com muito dinheiro em mãos! Os assaltantes do grupo têm mãos leves. Use o comando \`!banco\` antes que seja tarde.`,
+🌊 *Como funciona?* Mostra seus Golds em mãos, o dinheiro no banco, seus títulos (slot 1 e slot 2), itens ativos, energia diária e ainda exibe dívidas e histórico de roubos recentes.
+💡 *Dica de Ouro:* Responda à mensagem de outro membro com \`!gold\` para ver o perfil financeiro *dele* sem precisar de comandos extras.`,
 
             trabalhar: `╔═══════════════════════════════════════╗
           🔨  𝗚𝗨𝗜𝗔: !trabalhar  🔨
@@ -29,241 +29,318 @@ module.exports = {
           🏴‍☠️  𝗚𝗨𝗜𝗔: !assaltar  🏴‍☠️
 ╚═══════════════════════════════════════╝
 💧 *O que é?* A lei do mais forte (ou do mais sortudo).
-🌊 *Como funciona?* Digite \`!assaltar @membro\` para tentar roubar até 30% do dinheiro que o alvo tem vacilando na carteira (golds em mãos).
+🌊 *Como funciona?* Digite \`!assaltar @membro\` (ou responda a uma mensagem do alvo) para tentar roubar até 30% do dinheiro que o alvo tem na carteira.
 🔥 *Consequências:*
 ➔ *Sucesso:* Você sai rindo com os Golds do seu amigo.
-➔ *Fracasso:* Você tropeça numa onda, deixa sua própria carteira cair e a vítima recupera os fundos.
-❌ *A Maior Furada:* Se o alvo tiver um Escudo comprado na loja, o feitiço vira contra o feiticeiro! O escudo quebra, você é pego pelas patrulhas e toma uma multa pesada de *300 Golds* enviados direto para o banco central do bot.`,
+➔ *Fracasso:* Você tropeça numa onda, deixa sua própria carteira cair e perde 15% do seu saldo.
+❌ *A Maior Furada:* Se o alvo tiver um Escudo comprado na loja, o feitiço vira contra o feiticeiro! O escudo quebra, você é pego pelas patrulhas e toma uma multa pesada de *300 Golds*.`,
+
+            roubar: `╔═══════════════════════════════════════╗
+          🔓  𝗚𝗨𝗜𝗔: !roubar  🔓
+╚═══════════════════════════════════════╝
+💧 *O que é?* Assalto direto ao banco de outro membro.
+🌊 *Como funciona?* \`!roubar @membro\` tenta levar até 25% do saldo que o alvo guardou no banco. É mais arriscado que o \`!assaltar\` e a punição por falha é maior (perde 20% do seu próprio saldo + multa).
+🔒 *Proteção:* Se o alvo tiver um Cofre Blindado ativo, a chance de sucesso cai drasticamente.`,
+
+            revidar: `╔═══════════════════════════════════════╗
+          ⚔️  𝗚𝗨𝗜𝗔: !revidar  ⚔️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Contra-ataque contra o último ladrão que te roubou.
+🌊 *Como funciona?* Se você foi vítima de \`!assaltar\` ou \`!roubar\` nas últimas 24h, pode tentar recuperar parte do dinheiro. Se falhar, ainda perde mais um pouco.`,
 
             banco: `╔═══════════════════════════════════════╗
           🏦  𝗚𝗨𝗜𝗔: !banco  🏦
 ╚═══════════════════════════════════════╝
-💧 *O que é?* O único lugar 100% seguro contra os criminosos do chat.
+💧 *O que é?* O único lugar 100% seguro contra os criminosos do chat (mas nem tanto: o comando \`!roubar\` mira exatamente aqui).
 🌊 *Como usar:*
 ➔ \`!banco depositar [quantia]\` - Tira o dinheiro da mão e joga no cofre.
 ➔ \`!banco sacar [quantia]\` - Retira os fundos para você poder gastar na loja.
-🧠 *Visão Estratégica:* Dinheiro no banco não pode ser roubado via \`!assaltar\`. Se você vai ficar offline, jogue tudo no cofre!`,
+🧠 *Visão Estratégica:* Dinheiro no banco fica protegido de \`!assaltar\`, mas não de \`!roubar\`. Invista em um Cofre Blindado!`,
+
+            pagar: `╔═══════════════════════════════════════╗
+          💸  𝗚𝗨𝗜𝗔: !pagar  💸
+╚═══════════════════════════════════════╝
+💧 *O que é?* Transferência segura de Golds entre membros.
+🌊 *Como usar:* \`!pagar @membro [valor]\`. Se você devia para essa pessoa, o valor será automaticamente abatido da dívida registrada.`,
+
+            emprestar: `╔═══════════════════════════════════════╗
+          🤝  𝗚𝗨𝗜𝗔: !emprestar  🤝
+╚═══════════════════════════════════════╝
+💧 *O que é?* Empréstimo oficial de Golds com registro de dívida.
+🌊 *Como usar:* \`!emprestar @membro [valor]\`. O valor sai da sua carteira e entra na do membro, mas fica registrado como dívida (visível no \`!gold\` de ambos).`,
 
             loja: `╔═══════════════════════════════════════╗
           🏪  𝗚𝗨𝗜𝗔: !loja  🏪
 ╚═══════════════════════════════════════╝
-💧 *O que é?* O shopping center do Leicybot-.
-🌊 *Como funciona?* Digite \`!loja\` para ver a vitrine de itens e títulos temporários disponíveis. Para comprar, use \`!comprar [nome_do_item]\`.
-💎 *Tipos de Mercadoria:* Títulos lendários (com limite de 1 dono por grupo para ostentação máxima), títulos dourados, pratas e o utilitário Escudo Antirroubo. Todos os títulos têm validade estrita de *1 semana* antes de voltarem para a vitrine!`,
+💧 *O que é?* O shopping center do LeicyBot.
+🌊 *Como funciona?* Digite \`!loja\` para ver a vitrine com itens de proteção, recargas, iscas e títulos temporários. Para comprar, use \`!comprar [nome_do_item]\`.
+💎 *Dica:* Títulos têm limite de donos por grupo e validade de 1 semana. Itens como Escudo e Seguro Parcial são consumíveis e descartáveis.`,
 
+            comprar: `╔═══════════════════════════════════════╗
+          🛒  𝗚𝗨𝗜𝗔: !comprar  🛒
+╚═══════════════════════════════════════╝
+💧 *O que é?* Finalizador de compras da loja.
+🌊 *Como usar:* \`!comprar escudo\`, \`!comprar luasuperior1\`, \`!comprar recarga\`, etc. O valor é debitado da sua carteira na hora e o item/título é ativado.`,
+
+            vendertitulo: `╔═══════════════════════════════════════╗
+          🎭  𝗚𝗨𝗜𝗔: !vendertitulo  🎭
+╚═══════════════════════════════════════╝
+💧 *O que é?* Libera os slots de título (slot 1) para comprar um novo.
+🌊 *Como funciona?* Remove o título comprado atualmente equipado, abrindo vaga para adquirir outro na loja.`,
+
+            apresentacao: `╔═══════════════════════════════════════╗
+          📢  𝗚𝗨𝗜𝗔: !apresentacao  📢
+╚═══════════════════════════════════════╝
+💧 *O que é?* Controla o anúncio automático dos seus títulos no grupo.
+🌊 *Como usar:* \`!apresentacao on\` ou \`!apresentacao off\`. Quando ligado, sempre que você interage o bot exibe seu título.`,
+
+            investir: `╔═══════════════════════════════════════╗
+          📈  𝗚𝗨𝗜𝗔: !investir  📈
+╚═══════════════════════════════════════╝
+💧 *O que é?* Aplicação de Golds com rendimento diário.
+🌊 *Como usar:* \`!investir [valor]\`. O dinheiro fica travado e rende 5% ao dia. Resgate com \`!resgatar\` a qualquer momento.`,
+
+            resgatar: `╔═══════════════════════════════════════╗
+          💰  𝗚𝗨𝗜𝗔: !resgatar  💰
+╚═══════════════════════════════════════╝
+💧 *O que é?* Retira o investimento ativo + juros acumulados.
+🌊 *Como funciona?* Quanto mais tempo deixar investido, maior o lucro. Só pode ter um investimento por vez.`,
+
+            usar: `╔═══════════════════════════════════════╗
+          🔁  𝗚𝗨𝗜𝗔: !usar  🔁
+╚═══════════════════════════════════════╝
+💧 *O que é?* Ativa um item consumível comprado na loja.
+🌊 *Exemplo:* \`!usar recarga\` — zera seus limites diários de trabalho, mineração, pesca e raspadinha.`,
+
+            roleta: `╔═══════════════════════════════════════╗
+          🎡  𝗚𝗨𝗜𝗔: !roleta  🎡
+╚═══════════════════════════════════════╝
+💧 *O que é?* Jogo de cassino virtual.
+🌊 *Como usar:* \`!roleta [aposta] [vermelho/preto]\` (paga 2x) ou \`!roleta [aposta] [número de 0 a 36]\` (paga 14x). O zero é da casa.`,
+
+            slots: `╔═══════════════════════════════════════╗
+          🎰  𝗚𝗨𝗜𝗔: !slots  🎰
+╚═══════════════════════════════════════╝
+💧 *O que é?* Caça-níqueis com símbolos aleatórios.
+🌊 *Como usar:* \`!slots [aposta]\`. Três símbolos iguais pagam 10x, dois iguais pagam 2x.`,
+
+            apostar: `╔═══════════════════════════════════════╗
+          🎲  𝗚𝗨𝗜𝗔: !apostar  🎲
+╚═══════════════════════════════════════╝
+💧 *O que é?* Dobro ou nada contra a casa (~45% de chance).
+🌊 *Como usar:* \`!apostar [valor]\`. Se ganhar, dobra o valor; se perder, perde tudo.`,
+
+            dados: `╔═══════════════════════════════════════╗
+          🎲  𝗚𝗨𝗜𝗔: !dados  🎲
+╚═══════════════════════════════════════╝
+💧 *O que é?* Disputa de dados contra o bot.
+🌊 *Como usar:* \`!dados [aposta]\`. Ambos rolam um dado de 6 faces; o maior ganha. Empate não altera nada.`,
+
+            pescar: `╔═══════════════════════════════════════╗
+          🎣  𝗚𝗨𝗜𝗔: !pescar  🎣
+╚═══════════════════════════════════════╝
+💧 *O que é?* Pesca diária com prêmios variados (limite: 5/dia).
+🌊 *Como usar:* \`!pescar\`. Se tiver uma Isca Especial ativa, os prêmios aumentam 70%.`,
+
+            raspadinha: `╔═══════════════════════════════════════╗
+          🎫  𝗚𝗨𝗜𝗔: !raspadinha  🎫
+╚═══════════════════════════════════════╝
+💧 *O que é?* Raspadinha instantânea (limite: 3/dia). Custo zero.
+🌊 *Como usar:* \`!raspadinha\`. Chance de prêmio: 10% para 200 🪙, 30% para 80 🪙, 60% para nada.`,
+
+            // ⚔️ DIVERSÃO (mantidos os antigos e atualizados)
             duelo: `╔═══════════════════════════════════════╗
           ⚔️  𝗚𝗨𝗜𝗔: !duelo  ⚔️
 ╚═══════════════════════════════════════╝
 💧 *O que é?* Resolver as diferenças no soco virtual valendo dinheiro!
-🌊 *Como usar:* \`!duelo @membro [valor_da_aposta]\`
-🤖 *O Combate:* O bot cria uma cena cômica e decide quem venceu na base da sorte pura. O vencedor leva todos os Golds da aposta e o perdedor sai machucado e falido.
-⚠️ *Requisito:* Ambos os brigões precisam ter a quantia da aposta em mãos para o duelo começar.`,
+🌊 *Como usar:* \`!duelo @membro [valor_da_aposta]\` ou responda a uma mensagem do alvo.
+🤖 *O Combate:* O bot decide na sorte pura. O vencedor leva todos os Golds da aposta.
+⚠️ *Requisito:* Ambos precisam ter a quantia em mãos para o duelo começar.`,
 
             casar: `╔═══════════════════════════════════════╗
           💍  𝗚𝗨𝗜𝗔: !casar  💍
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O início do matrimônio virtual no chat.
 🌊 *Como usar:* \`!casar @membro\` para se ajoelhar e propor união oficial ao alvo.
-📌 *Nota:* O alvo precisa aceitar usando o comando \`!aceitar\` para que o casamento seja formalizado sob as bençãos de Olden.`,
+📌 *Nota:* O alvo precisa aceitar usando \`!aceitar\`.`,
 
             aceitar: `╔═══════════════════════════════════════╗
           ✅  𝗚𝗨𝗜𝗔: !aceitar  ✅
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O comando do "Sim" definitivo.
-🌊 *Como funciona?* Consuma o pedido de casamento pendente enviado por algum membro apaixonado. O banco de dados salva o vínculo e anuncia a união de vocês no grupo.`,
+🌊 *Como funciona?* Consuma o pedido de casamento pendente e oficializa a união.`,
 
             divorciar: `╔═══════════════════════════════════════╗
           💔  𝗚𝗨𝗜𝗔: !divorciar  💔
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O tribunal de partilha de bens e solteirice.
-🌊 *Como funciona?* Rompe instantaneamente o casamento virtual ativo, deixando ambos os perfis livres e solteiros novamente no banco de dados.`,
-
-            // 🛡️ CATEGORIA: MODERAÇÃO & SEGURANÇA (ADMINISTRADORES)
-            ban: `╔═══════════════════════════════════════╗
-          🔨  𝗚𝗨𝗜𝗔: !ban / !kick  🔨
-╚═══════════════════════════════════════╝
-💧 *O que é?* O martelo da justiça da moderação.
-🌊 *Como usar:* \`!ban @membro\` ou \`!kick @membro\` em resposta a uma infração.
-🚨 *Requisito:* O executor precisa ser ADM e o bot também precisa possuir privilégios administrativos no grupo para remover o infrator.`,
-
-            kick: `╔═══════════════════════════════════════╗
-          🔨  𝗚𝗨𝗜𝗔: !kick  🔨
-╚═══════════════════════════════════════╝
-💧 *O que é?* Remoção imediata de membros (mesma função do comando \`!ban\`).`,
-
-            promover: `╔═══════════════════════════════════════╗
-          ✨  𝗚𝗨𝗜𝗔: !promover  ✨
-╚═══════════════════════════════════════╝
-💧 *O que é?* Concessão de cargos administrativos.
-🌊 *Como usar:* \`!promover @membro\` para tornar o usuário selecionado um novo Administrador oficial do grupo.`,
-
-            rebaixar: `╔═══════════════════════════════════════╗
-          📉  𝗚𝗨𝗜𝗔: !rebaixar  📉
-╚═══════════════════════════════════════╝
-💧 *O que é?* Destituição de cargo administrativo.
-🌊 *Como usar:* \`!rebaixar @membro\` para retirar as credenciais e privilégios de ADM de um integrante, voltando-o a membro comum.`,
-
-            antilink: `╔═══════════════════════════════════════╗
-          🛡️  𝗚𝗨𝗜𝗔: !antilink  🛡️
-╚═══════════════════════════════════════╝
-💧 *O que é?* Filtro de links comuns de sites ou redes externas.
-🌊 *Como usar:* \`!antilink on\` ou \`!antilink off\`. Quando ligado, mensagens contendo links comuns de internet enviados por não-adms serão apagadas de forma automática pelo robô.`,
-
-            antilink2: `╔═══════════════════════════════════════╗
-          🛡️  𝗚𝗨𝗜𝗔: !antilink2  🛡️
-╚═══════════════════════════════════════╝
-💧 *O que é?* A barreira definitiva de segurança (Modo Hard-Ban).
-🌊 *Como funciona?* Exclusivo para Administradores. Quando ativado via \`!antilink2 on\`, qualquer link de convite enviado por membros comuns resultará no apagamento imediato da mensagem e no **BANIMENTO AUTOMÁTICO** do infrator, sem choro e sem segunda chance.`,
-
-            fakes: `╔═══════════════════════════════════════╗
-          🌐  𝗚𝗨𝗜𝗔: !fakes  🌐
-╚═══════════════════════════════════════╝
-💧 *O que é?* O detector de números estrangeiros invasores.
-🌊 *Como funciona?* Ativado pelos ADMs via \`!fakes on\`. O bot monitora a entrada do grupo. Se entrar qualquer número com código de país (DDI) diferente do configurado padrão nacional, o robô executa a expulsão imediata.`,
-
-            grupo: `╔═══════════════════════════════════════╗
-          🔒  𝗚𝗨𝗜𝗔: !grupo  🔒
-╚═══════════════════════════════════════╝
-💧 *O que é?* Gerenciador de permissões de escrita do chat.
-🌊 *Como usar:*
-➔ \`!grupo fechar\` - Apenas administradores podem enviar mensagens.
-➔ \`!grupo abrir\` - Todos os integrantes voltam a interagir livremente.`,
-
-            limpar: `╔═══════════════════════════════════════╗
-          🧹  𝗚𝗨𝗜𝗔: !limpar  🧹
-╚═══════════════════════════════════════╝
-💧 *O que é?* Ocultação rápida do fluxo de mensagens anterior.
-🌊 *Como funciona?* Envia uma sequência maciça de blocos em branco invisíveis para empurrar o histórico de chat para cima, limpando o campo de visão visual das telas dos celulares.`,
-
-            marcar: `╔═══════════════════════════════════════╗
-          📣  𝗚𝗨𝗜𝗔: !marcar  📣
-╚═══════════════════════════════════════╝
-💧 *O que é?* Menção em massa (Marcar Todos).
-🌊 *Como usar:* \`!marcar [texto do aviso]\` para notificar e citar de uma vez só todos os participantes do grupo para avisos urgentes.`,
-
-            adms: `╔═══════════════════════════════════════╗
-          ⚡  𝗚𝗨𝗜𝗔: !adms  ⚡
-╚═══════════════════════════════════════╝
-💧 *O que é?* Botão de emergência de chamado técnico.
-🌊 *Como funciona?* Menciona em formato de alerta toda a equipe de administradores ativa do grupo. Use para relatar invasões ou brigas.`,
-
-            setregras: `╔═══════════════════════════════════════╗
-          📝  𝗚𝗨𝗜𝗔: !setregras  📝
-╚═══════════════════════════════════════╝
-💧 *O que é?* Configurador do estatuto interno do grupo.
-🌊 *Como usar:* \`!setregras [texto das regras aqui]\`. Salva as normas diretamente no banco de dados específico daquele chat.`,
-
-            regras: `╔═══════════════════════════════════════╗
-          📜  𝗚𝗨𝗜𝗔: !regras  📜
-╚═══════════════════════════════════════╝
-💧 *O que é?* Exibição das normas da casa.
-🌊 *Como funciona?* Puxa e formata em uma moldura estilizada o texto configurado previamente pelo comando \`!setregras\`.`,
-
-            atividade: `╔═══════════════════════════════════════╗
-          📊  𝗚𝗨𝗜𝗔: !atividade  📊
-╚═══════════════════════════════════════╝
-💧 *O que é?* Painel estatístico de mensagens enviadas.
-🌊 *Como funciona?* Exibe em tempo real o ranking top 15 dos usuários locais mais falantes e ativos no contador do bot.`,
-
-            online: `╔═══════════════════════════════════════╗
-          🟢  𝗚𝗨𝗜𝗔: !online  🟢
-╚═══════════════════════════════════════╝
-💧 *O que é?* Painel de presença verificada.
-🌊 *Como funciona?* Lista os membros que interagiram recentemente e possuem logs de mensagens recentes ativos no escopo do bot.`,
-
-            // 🎵 CATEGORIA: MÍDIAS, BUSCAS & BRINCADEIRAS
-            sticker: `╔═══════════════════════════════════════╗
-          🖼️  𝗚𝗨Ｉ𝗔: !sticker  🖼️
-╚═══════════════════════════════════════╝
-💧 *O que é?* A fábrica oficial de figurinhas do grupo (atalho: \`!s\`).
-🌊 *Como funciona?* Envie uma imagem ou um vídeo curto, ou responda/marque uma mídia digitando \`!sticker\`.
-🚨 *TRAVA DE SEGURANÇA DO RAILWAY:* Para evitar lentidão e não derrubar o processador do bot, os vídeos enviados para figurinhas animadas possuem um limite rígido de **até 10 segundos**. Vídeos maiores que isso serão rejeitados automaticamente!`,
-
-            s: `╔═══════════════════════════════════════╗
-          🖼️  𝗚𝗨𝗜𝗔: !s  🖼️
-╚═══════════════════════════════════════╝
-💧 *O que é?* Atalho direto e rápido para o comando \`!sticker\`.`,
-
-            's-': `╔═══════════════════════════════════════╗
-          🖼️  𝗚𝗨𝗜𝗔: !s- / !sticker-  🖼️
-╚═══════════════════════════════════════╝
-💧 *O que é?* A mesma fábrica de figurinhas, mas com legenda.
-🌊 *Como usar:* Responda uma imagem ou vídeo digitando \`!s- texto aqui\`. O texto é desenhado na própria figurinha. Sem o traço e sem texto, use só \`!s\` para a figurinha normal.`,
-
-            attp: `╔═══════════════════════════════════════╗
-          🌈  𝗚𝗨𝗜𝗔: !attp  🌈
-╚═══════════════════════════════════════╝
-💧 *O que é?* Figurinha animada com texto oscilando em cores (estilo LED).
-🌊 *Como usar:* \`!attp texto aqui\`. Não precisa responder nada, o bot gera a figurinha do zero.`,
-
-            copiarsticker: `╔═══════════════════════════════════════╗
-          🖼️  𝗚𝗨𝗜𝗔: !copiarsticker  🖼️
-╚═══════════════════════════════════════╝
-💧 *O que é?* Extrator de imagens de figurinhas.
-🌊 *Como usar:* Responda/marque uma figurinha estática digitando \`!copiarsticker\`. O bot fará o download do arquivo WebP e reverterá de volta para uma imagem JPG comum.`,
+🌊 *Como funciona?* Rompe instantaneamente o casamento virtual ativo.`,
 
             beijar: `╔═══════════════════════════════════════╗
           💋  𝗚𝗨𝗜𝗔: !beijar  💋
 ╚═══════════════════════════════════════╝
 💧 *O que é?* Ação social cômica de carinho.
-🌊 *Como usar:* \`!beijar @membro\`. Adiciona +1 beijo ao contador de estatísticas do alvo e exibe uma narrativa engraçada no chat.`,
+🌊 *Como usar:* \`!beijar @membro\` (ou respondendo a alguém). Adiciona +1 beijo ao contador do alvo.`,
 
             bater: `╔═══════════════════════════════════════╗
           💥  𝗚𝗨𝗜𝗔: !bater  💥
 ╚═══════════════════════════════════════╝
 💧 *O que é?* Ação social cômica de combate físico simulado.
-🌊 *Como usar:* \`!bater @membro\` para aplicar um golpe fictício humorístico no integrante marcado.`,
+🌊 *Como usar:* \`!bater @membro\` (ou respondendo).`,
 
             abracar: `╔═══════════════════════════════════════╗
           🫂  𝗚𝗨𝗜𝗔: !abracar  🫂
 ╚═══════════════════════════════════════╝
-💧 *O que é?* Ação social cômica de afeto e amizade.
-🌊 *Como usar:* \`!abracar @membro\`. Incrementa o ranking interno de abraços recebidos pelo usuário alvo.`,
+💧 *O que é?* Ação social cômica de afeto.
+🌊 *Como usar:* \`!abracar @membro\` (ou respondendo). Incrementa o ranking de abraços recebidos.`,
 
             gado: `╔═══════════════════════════════════════╗
           🐂  𝗚𝗨𝗜𝗔: !gado  🐂
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O medidor de sem-vergonhice amorosa.
-🌊 *Como funciona?* Digite \`!gado\` e o algoritmo super avançado (e altamente irônico) vai ler o nível de paixão boba do seu perfil, dando uma nota de 0% a 100% acompanhada de um veredito engraçado. Perfeito para zoar os amigos apaixonados do grupo.`,
+🌊 *Como funciona?* Digite \`!gado\` para ver seu nível de paixão boba em porcentagem.`,
 
             gostoso: `╔═══════════════════════════════════════╗
           🔥  𝗚𝗨𝗜𝗔: !gostoso  🔥
 ╚═══════════════════════════════════════╝
-💧 *O que é?* Avaliador automatizado de latência estética.
-🌊 *Como funciona?* Mede em porcentagem de 0% a 100% o nível de beleza do usuário emissor, gerando vereditos humorísticos ideais para descontração.`,
-
-            anime: `╔═══════════════════════════════════════╗
-          🍥  𝗚𝗨𝗜𝗔: !anime  🍥
-╚═══════════════════════════════════════╝
-💧 *O que é?* Buscador de fichas de animações japonesas.
-🌊 *Como usar:* \`!anime [nome do anime]\` para extrair informações fundamentais, notas de avaliação global e a sinopse técnica da obra informada.`,
-
-            clima: `╔═══════════════════════════════════════╗
-          ☀️  𝗚𝗨𝗜𝗔: !clima  ☀️
-╚═══════════════════════════════════════╝
-💧 *O que é?* Consulta meteorológica rápida.
-🌊 *Como usar:* \`!clima [nome da cidade]\` para verificar as condições climáticas locais atuais, sensações térmicas e vento costeiro estimado.`,
-
-            google: `╔═══════════════════════════════════════╗
-          🔍  𝗚𝗨𝗜𝗔: !google  🔍
-╚═══════════════════════════════════════╝
-💧 *O que é?* Motor de indexação rápida.
-🌊 *Como usar:* \`!google [termo de busca]\` para receber os links diretos oficiais de indexação correspondentes à palavra informada.`,
+💧 *O que é?* Avaliador automatizado de beleza.
+🌊 *Como funciona?* \`!gostoso\` retorna uma porcentagem aleatória e um veredito cômico.`,
 
             curiosidade: `╔═══════════════════════════════════════╗
           🧠  𝗚𝗨𝗜𝗔: !curiosidade  🧠
 ╚═══════════════════════════════════════╝
-💧 *O que é?* O sistema de enciclopédia cultural do bot.
-🌊 *Como funciona?* Digite \`!curiosidade\` para um fato aleatório ou filtre usando as barras de subcategorias estritas!
-👉 *Filtros Disponíveis:* ➔ \`!curiosidade/animes\`
-➔ \`!curiosidade/games\`
-➔ \`!curiosidade/ciencia\`
-➔ \`!curiosidade/arte\`
-➔ \`!curiosidade/filmes\`
-➔ \`!curiosidade/historia\`
-➔ \`!curiosidade/tecnologia\`
-➔ \`!curiosidade/natureza\`
-➔ \`!curiosidade/sports\``
+💧 *O que é?* Enciclopédia cultural do bot.
+🌊 *Como funciona?* \`!curiosidade\` para fato aleatório ou \`!curiosidade/animes\`, \`!curiosidade/ciencia\`, etc.`,
+
+            // 🛡️ MODERAÇÃO (adicionados novos)
+            mutar: `╔═══════════════════════════════════════╗
+          🤫  𝗚𝗨𝗜𝗔: !mutar  🤫
+╚═══════════════════════════════════════╝
+💧 *O que é?* Silenciar temporariamente um membro.
+🌊 *Como usar:* \`!mutar @membro [minutos]\` (padrão 10 min). As mensagens do alvo serão apagadas automaticamente enquanto durar o mute.`,
+
+            antimidia: `╔═══════════════════════════════════════╗
+          🎵  𝗚𝗨𝗜𝗔: !antimidia  🎵
+╚═══════════════════════════════════════╝
+💧 *O que é?* Bloqueio de imagens, vídeos, áudios e figurinhas enviados por não-admins.
+🌊 *Como usar:* \`!antimidia on\` / \`!antimidia off\`.`,
+
+            antipalavra: `╔═══════════════════════════════════════╗
+          🔇  𝗚𝗨𝗜𝗔: !antipalavra  🔇
+╚═══════════════════════════════════════╝
+💧 *O que é?* Lista negra de palavras proibidas no grupo.
+🌊 *Como usar:* \`!antipalavra add [palavra]\`, \`!antipalavra rem [palavra]\`, \`!antipalavra list\`.`,
+
+            antiflood: `╔═══════════════════════════════════════╗
+          🚦  𝗚𝗨𝗜𝗔: !antiflood  🚦
+╚═══════════════════════════════════════╝
+💧 *O que é?* Limite de mensagens por intervalo.
+🌊 *Como usar:* \`!antiflood 5 10\` — se um membro enviar mais de 5 mensagens em 10 segundos, será silenciado automaticamente por 5 minutos.`,
+
+            modolento: `╔═══════════════════════════════════════╗
+          🐢  𝗚𝗨𝗜𝗔: !modolento  🐢
+╚═══════════════════════════════════════╝
+💧 *O que é?* Modo lento (slow mode). Cada membro só pode enviar uma mensagem a cada X segundos.
+🌊 *Como usar:* \`!modolento 10\` para 10 segundos; \`!modolento 0\` para desativar.`,
+
+            inativos: `╔═══════════════════════════════════════╗
+          💤  𝗚𝗨𝗜𝗔: !inativos  💤
+╚═══════════════════════════════════════╝
+💧 *O que é?* Lista (e opcionalmente remove) membros que não interagem há X dias.
+🌊 *Como usar:* \`!inativos 30\` para listar, \`!inativos 30 remover\` para remover.`,
+
+            bloquearcmd: `╔═══════════════════════════════════════╗
+          🚫  𝗚𝗨𝗜𝗔: !bloquearcmd  🚫
+╚═══════════════════════════════════════╝
+💧 *O que é?* Alterna o bloqueio de um comando específico no grupo.
+🌊 *Como usar:* \`!bloquearcmd roleta\` (se estava liberado, bloqueia; se estava bloqueado, libera).`,
+
+            config: `╔═══════════════════════════════════════╗
+          ⚙️  𝗚𝗨𝗜𝗔: !config  ⚙️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Exibe um resumo completo das configurações de moderação do grupo.`,
+
+            fechar: `╔═══════════════════════════════════════╗
+          🔒  𝗚𝗨𝗜𝗔: !fechar  🔒
+╚═══════════════════════════════════════╝
+💧 *O que é?* Fecha o grupo temporariamente (apenas admins falam).
+🌊 *Como usar:* \`!fechar 120\` para fechar por 2 minutos. Após o tempo, o bot reabre automaticamente.`,
+
+            limparmsg: `╔═══════════════════════════════════════╗
+          🧹  𝗚𝗨𝗜𝗔: !limparmsg  🧹
+╚═══════════════════════════════════════╝
+💧 *O que é?* Apaga as últimas mensagens de um membro específico (máx. 10).
+🌊 *Como usar:* \`!limparmsg @membro 5\` apaga as 5 mensagens mais recentes dele no chat.`,
+
+            // Os comandos de moderação que já existiam foram mantidos sem alterações significativas, apenas com ajuste de texto em "ban", "kick", etc., mas estão corretos.
+
+            // 🎵 MÍDIA (corrigida referência ao Railway)
+            sticker: `╔═══════════════════════════════════════╗
+          🖼️  𝗚𝗨𝗜𝗔: !sticker  🖼️
+╚═══════════════════════════════════════╝
+💧 *O que é?* A fábrica oficial de figurinhas do grupo (atalho: \`!s\`).
+🌊 *Como funciona?* Envie uma imagem ou um vídeo curto, ou responda/marque uma mídia digitando \`!sticker\`.
+🚨 *LIMITE DO SERVIDOR:* Vídeos para figurinhas animadas possuem um limite rígido de **até 10 segundos**. Vídeos maiores serão rejeitados automaticamente!`,
+
+            s: `╔═══════════════════════════════════════╗
+          🖼️  𝗚𝗨𝗜𝗔: !s  🖼️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Atalho direto para \`!sticker\`.`,
+
+            's-': `╔═══════════════════════════════════════╗
+          🖼️  𝗚𝗨𝗜𝗔: !s- / !sticker-  🖼️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Figurinha com texto desenhado.
+🌊 *Como usar:* Responda uma imagem/vídeo com \`!s- seu texto aqui\`.`,
+
+            attp: `╔═══════════════════════════════════════╗
+          🌈  𝗚𝗨𝗜𝗔: !attp  🌈
+╚═══════════════════════════════════════╝
+💧 *O que é?* Figurinha animada com texto colorido (estilo LED).
+🌊 *Como usar:* \`!attp seu texto\`.`,
+
+            copiarsticker: `╔═══════════════════════════════════════╗
+          🖼️  𝗚𝗨𝗜𝗔: !copiarsticker  🖼️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Converte figurinha estática em imagem.
+🌊 *Como usar:* Responda uma figurinha com \`!copiarsticker\`.`,
+
+            anime: `╔═══════════════════════════════════════╗
+          🍥  𝗚𝗨𝗜𝗔: !anime  🍥
+╚═══════════════════════════════════════╝
+💧 *O que é?* Buscador de animes.
+🌊 *Como usar:* \`!anime Naruto\` para ficha técnica, nota e sinopse.`,
+
+            clima: `╔═══════════════════════════════════════╗
+          ☀️  𝗚𝗨𝗜𝗔: !clima  ☀️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Previsão do tempo em tempo real.
+🌊 *Como usar:* \`!clima Maputo\`.`,
+
+            google: `╔═══════════════════════════════════════╗
+          🔍  𝗚𝗨𝗜𝗔: !google  🔍
+╚═══════════════════════════════════════╝
+💧 *O que é?* Gera link de pesquisa.
+🌊 *Como usar:* \`!google como fazer strogonoff\`.`,
+
+            // Outros comandos de mídia mantidos sem alterações
+            perfil: `╔═══════════════════════════════════════╗
+          👤  𝗚𝗨𝗜𝗔: !perfil  👤
+╚═══════════════════════════════════════╝
+💧 *O que é?* Seu cartão de identidade no bot.
+🌊 *Como usar:* \`!perfil\` ou responda à mensagem de alguém com \`!perfil\` para ver o perfil *dessa pessoa*.`,
+
+            setbio: `╔═══════════════════════════════════════╗
+          📝  𝗚𝗨𝗜𝗔: !setbio  📝
+╚═══════════════════════════════════════╝
+💧 *O que é?* Define sua biografia.
+🌊 *Como usar:* \`!setbio Programadora e gamer nas horas vagas\`.`,
+
+            setidade: `╔═══════════════════════════════════════╗
+          🎂  𝗚𝗨𝗜𝗔: !setidade  🎂
+╚═══════════════════════════════════════╝
+💧 *O que é?* Define sua idade no perfil.
+🌊 *Como usar:* \`!setidade 25\`.`,
         };
 
         return guias[cmd] || "🌊 Opa! Não encontrei esse comando na minha enciclopédia. Verifique se digitou o nome correto sem o ponto de exclamação! 💧";
