@@ -1,5 +1,6 @@
+// modulos/adm.js
 const criarUsuarioPadrao = require('./usuarioPadrao');
-const { resolverIdentidade, participanteBruto } = require('./jidUtils');
+const { resolverIdentidade, participanteBruto, obterAlvo } = require('./jidUtils');
 
 module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoComando = false) => {
     const from = msg.key.remoteJid;
@@ -11,16 +12,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
         return sock.sendMessage(from, { text: "❌ Este comando só pode ser executado dentro de grupos! 🌊" }, { quoted: msg });
     }
 
-    // Obter metadados do grupo para validar administradores
+    // Metadados do grupo para validar administradores
     const groupMetadata = await sock.groupMetadata(from);
     const participants = groupMetadata.participants;
     const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-    // Alguns grupos representam o próprio bot via @lid; sock.user.lid (quando existe)
-    // é o identificador alternativo pra esse mesmo caso.
     const botIdLid = sock.user.lid ? (sock.user.lid.includes('@') ? sock.user.lid.split(':')[0] : sock.user.lid.split(':')[0] + '@lid') : null;
 
-    // Lista de admins, incluindo qualquer identificador alternativo (telefone) que o
-    // Baileys exponha por participante — protege contra o grupo listar admins via @lid.
     const adms = [];
     participants.forEach(p => {
         if (p.admin !== null) {
@@ -33,12 +30,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
     const isAdmin = adms.includes(sender) || adms.includes(senderBruto);
     const botIsAdmin = adms.includes(botId) || (botIdLid && adms.includes(botIdLid));
 
-    // Validação estrita de administrador OU permissão especial concedida pelo dono
-    if (!isAdmin && !possuiPermissaoComando) {
-        return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Este comando é exclusivo para os Administradores do grupo ou membros autorizados! 🛡️" }, { quoted: msg });
-    }
-
-    // Inicializar configurações do grupo no DB caso não existam
+    // Inicializar configurações do grupo
     if (!db.grupos) db.grupos = {};
     if (!db.grupos[from]) {
         db.grupos[from] = {
@@ -46,212 +38,293 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             antilink: false,
             antilink2: false,
             fakes: false,
-            regras: "Nenhuma regra definida ainda pelo comando !setregras.",
+            antimidia: false,
+            regras: "Nenhuma regra definida ainda.",
             bv_ativo: "bv1",
             bv1: "Seja muito bem-vindo(a) ao grupo! 🌊",
             bv2: "Opa! Um novo integrante entrou no recinto! Respeite as regras e divirta-se. 💧",
-            bv3: "Saudações! Nova presença detectada sob o comando de Olden! 🔥"
+            bv3: "Saudações! Nova presença detectada sob o comando de Olden! 🔥",
+            comandos_bloqueados: [],
+            palavras_proibidas: [],
+            slowmode_segundos: 0,
+            antiflood: null,
+            fechado_ate: null
         };
     }
     let gConfig = db.grupos[from];
 
+    // Validação de permissão: comandos restritos a admins ou permissão especial
+    const exigeAdmin = !['menuadm', 'regras', 'atividade', 'online', 'config', 'bv1', 'bv2', 'bv3'].includes(comando);
+    if (exigeAdmin && !isAdmin && !possuiPermissaoComando) {
+        return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Este comando é exclusivo para administradores do grupo ou membros autorizados! 🛡️" }, { quoted: msg });
+    }
+
     switch (comando) {
-        case 'menuadm':
-            const menuAdmTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🛡️  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗢𝗗𝗘𝗥𝗔𝗖𝗔𝗢  🛡️      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Ferramentas de contenção e segurança activa.\n\n ➔ *!menuadm* ➔ Exibe este menu.\n ➔ *!adv [@user]* ➔ Adiciona 1 advertência (3 em 2 semanas = Ban Automático).\n ➔ *!ban / !kick [@user]* - Remove um infrator.\n ➔ *!promover [@user]* - Concede privilégios de ADM.\n ➔ *!rebaixar [@user]* - Retira privilégios de ADM.\n ➔ *!antilink [on/off]* - Apaga links comuns enviadas.\n ➔ *!antilink2 [on/off]* - Deleta link e bane o membro.\n ➔ *!fakes [on/off]* - Expulsa números gringos (+ de 1 DDI).\n ➔ *!grupo [abrir/fechar]* - Altera permissões do chat.\n ➔ *!limpar* - Limpa o histórico de exibição do chat.\n ➔ *!marcar* - Menciona todos os integrantes de uma vez.\n ➔ *!adms* - Chama a equipe técnica de ADMs.\n ➔ *!setregras [texto]* - Define o estatuto interno.\n ➔ *!regras* - Exibe as normas atuais salvas.\n ➔ *!boasvindas [on/off]* - Liga/Desliga o sistema de saudações.\n ➔ *!setwelcome1 / 2 / 3 [texto]* - Modifica os slots de BV.\n ➔ *!bv1 / !bv2 / !bv3* - Escolhe qual modelo fica ativo.\n ➔ *!atividade* - Exibe ranking de mensagens enviadas.\n ➔ *!online* - Lista membros que interagiram recentemente.\n░▒▓█████████████████████████████████████▓▒░`;
+        case 'menuadm': {
+            const menuAdmTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🛡️  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗢𝗗𝗘𝗥𝗔𝗖𝗔𝗢  🛡️      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Ferramentas de contenção e segurança ativa.\n\n ➔ *!menuadm* ➔ Exibe este menu.\n ➔ *!adv [@user]* ➔ Adiciona 1 advertência (3 em 2 semanas = Ban Automático).\n ➔ *!ban / !kick [@user]* ➔ Remove um infrator.\n ➔ *!mutar [@user] [minutos]* ➔ Silencia membro temporariamente.\n ➔ *!promover [@user]* ➔ Concede privilégios de ADM.\n ➔ *!rebaixar [@user]* ➔ Retira privilégios de ADM.\n ➔ *!antilink [on/off]* ➔ Apaga links comuns.\n ➔ *!antilink2 [on/off]* ➔ Deleta link e bane o membro.\n ➔ *!antimidia [on/off]* ➔ Bloqueia envio de mídias por não-admins.\n ➔ *!antipalavra [add/rem/list] [palavra]* ➔ Lista negra de palavras.\n ➔ *!antiflood [max] [segundos]* ➔ Limita mensagens em intervalo (punição: mute).\n ➔ *!modolento [segundos]* ➔ Slow mode (uma mensagem a cada X segundos).\n ➔ *!fakes [on/off]* ➔ Expulsa números gringos.\n ➔ *!bloquearcmd [comando]* ➔ Alterna bloqueio de comando no grupo.\n ➔ *!fechar [segundos]* ➔ Fecha o grupo temporariamente.\n ➔ *!grupo [abrir/fechar]* ➔ Altera permissões do chat (permanente).\n ➔ *!limparmsg [@user] [qtd]* ➔ Apaga últimas mensagens de um membro.\n ➔ *!inativos [dias] [remover]* ➔ Lista/remove membros inativos.\n ➔ *!limpar* ➔ Limpa o histórico de exibição do chat.\n ➔ *!marcar* ➔ Menciona todos os integrantes.\n ➔ *!adms* ➔ Chama a equipe de ADMs.\n ➔ *!setregras [texto]* ➔ Define o estatuto interno.\n ➔ *!regras* ➔ Exibe as normas salvas.\n ➔ *!boasvindas [on/off]* ➔ Liga/Desliga saudações.\n ➔ *!setwelcome1 / 2 / 3 [texto]* ➔ Modifica os slots de BV.\n ➔ *!bv1 / !bv2 / !bv3* ➔ Escolhe modelo ativo.\n ➔ *!atividade* ➔ Ranking de mensagens.\n ➔ *!online* ➔ Membros ativos em 24h.\n ➔ *!config* ➔ Resumo das configurações do grupo.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuAdmTxt }, { quoted: msg });
             break;
+        }
 
-        case 'adv':
-            const alvoAdv = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoAdv) return sock.sendMessage(from, { text: "❌ Marque o membro que deseja aplicar a advertência!" }, { quoted: msg });
-            if (alvoAdv === botId) return sock.sendMessage(from, { text: "❌ Você não pode dar advertências para o próprio bot." }, { quoted: msg });
+        case 'adv': {
+            const alvoAdv = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoAdv) return sock.sendMessage(from, { text: "❌ Marque o membro para advertir!" }, { quoted: msg });
+            if (alvoAdv === botId) return sock.sendMessage(from, { text: "❌ Você não pode advertir o bot." }, { quoted: msg });
 
             if (!db.usuarios[alvoAdv]) db.usuarios[alvoAdv] = criarUsuarioPadrao();
             if (!db.usuarios[alvoAdv].advertencias) db.usuarios[alvoAdv].advertencias = [];
 
-            const timestampAgora = Date.now();
-            db.usuarios[alvoAdv].advertencias.push(timestampAgora);
-
-            // Filtra as advertências recebidas apenas nas últimas 2 semanas (14 dias em milissegundos)
-            const duasSemanasEmMs = 14 * 24 * 60 * 60 * 1000;
-            const advsRecentes = db.usuarios[alvoAdv].advertencias.filter(t => (timestampAgora - t) <= duasSemanasEmMs);
-
-            db.usuarios[alvoAdv].advertencias = advsRecentes;
+            const agora = Date.now();
+            db.usuarios[alvoAdv].advertencias.push(agora);
+            const duasSemanasMs = 14 * 24 * 60 * 60 * 1000;
+            db.usuarios[alvoAdv].advertencias = db.usuarios[alvoAdv].advertencias.filter(t => agora - t <= duasSemanasMs);
+            const total = db.usuarios[alvoAdv].advertencias.length;
             salvarDB(db);
 
-            const totalAdvs = advsRecentes.length;
-
-            if (totalAdvs >= 3) {
+            if (total >= 3) {
                 if (!botIsAdmin) {
-                    return sock.sendMessage(from, { text: `🚨 *LIMITE ALCANÇADO:* O membro @${alvoAdv.split('@')[0]} atingiu ${totalAdvs} advertências em menos de 2 semanas! Porém, não posso bani-lo porque não sou Administrador do grupo! 💧`, mentions: [alvoAdv] }, { quoted: msg });
+                    return sock.sendMessage(from, { text: `🚨 Limite de ${total} advertências atingido, mas não sou admin para banir.` }, { quoted: msg });
                 }
-                // Executa o Ban Automático Estruturado
                 await sock.groupParticipantsUpdate(from, [alvoAdv], "remove");
                 db.usuarios[alvoAdv].advertencias = [];
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `🔨 *BAN AUTOMÁTICO:* O usuário @${alvoAdv.split('@')[0]} acumulou ${totalAdvs} advertências dentro do prazo de 2 semanas e foi banido do grupo!`, mentions: [alvoAdv] });
+                await sock.sendMessage(from, { text: `🔨 *BAN AUTOMÁTICO:* @${alvoAdv.split('@')[0]} acumulou 3 advertências em 2 semanas e foi banido!`, mentions: [alvoAdv] });
             } else {
-                await sock.sendMessage(from, { text: `⚠️ *ADVERTÊNCIA APLICADA:* O usuário @${alvoAdv.split('@')[0]} recebeu uma advertência da moderação.\n\n📊 *Status:* [${totalAdvs}/3] advertências ativas nas últimas 2 semanas. Evite o acúmulo para não ser banido!`, mentions: [alvoAdv] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `⚠️ *ADVERTÊNCIA:* @${alvoAdv.split('@')[0]} [${total}/3] advertências ativas.`, mentions: [alvoAdv] }, { quoted: msg });
             }
             break;
-
-        case 'boasvindas':
-            if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
-                return sock.sendMessage(from, { text: "🌊 Use: *!boasvindas on* ou *!boasvindas off*" }, { quoted: msg });
-            }
-            gConfig.boasvindas = args[0] === 'on';
-            salvarDB(db);
-            await sock.sendMessage(from, { text: `👋 Sistema de *Boas-Vindas* definido como: *${args[0].toUpperCase()}*.` }, { quoted: msg });
-            break;
+        }
 
         case 'ban':
-        case 'kick':
-            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para remover membros! 💧" }, { quoted: msg });
-            const alvoBan = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoBan) return sock.sendMessage(from, { text: "❌ Marque o membro que deseja banir!" }, { quoted: msg });
+        case 'kick': {
+            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para remover membros!" }, { quoted: msg });
+            const alvoBan = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoBan) return sock.sendMessage(from, { text: "❌ Marque o membro a ser removido!" }, { quoted: msg });
             if (alvoBan === botId) return sock.sendMessage(from, { text: "🤔 Tentar me banir usando meus próprios comandos? Genial." }, { quoted: msg });
 
             await sock.groupParticipantsUpdate(from, [alvoBan], "remove");
-            await sock.sendMessage(from, { text: `🔨 *JUSTIÇA APLICADA:* @${alvoBan.split('@')[0]} foi devidamente removido do grupo por má conduta!`, mentions: [alvoBan] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🔨 *JUSTIÇA APLICADA:* @${alvoBan.split('@')[0]} foi removido do grupo!`, mentions: [alvoBan] }, { quoted: msg });
             break;
+        }
 
-        case 'promover':
-            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para alterar cargos!" }, { quoted: msg });
-            const alvoPromover = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoPromover) return sock.sendMessage(from, { text: "❌ Marque o membro para torná-lo ADM!" }, { quoted: msg });
+        case 'mutar': {
+            const alvoMute = obterAlvo(msg);
+            if (!alvoMute) return sock.sendMessage(from, { text: "❌ Marque ou responda ao membro que será silenciado." }, { quoted: msg });
+            if (alvoMute === botId) return sock.sendMessage(from, { text: "❌ Não posso me silenciar." }, { quoted: msg });
 
+            const minutos = parseInt(args[1] || args[0]) || 10; // padrão 10 min
+            if (minutos <= 0 || minutos > 1440) return sock.sendMessage(from, { text: "❌ Duração inválida (1 a 1440 minutos)." }, { quoted: msg });
+
+            if (!db.usuarios[alvoMute]) db.usuarios[alvoMute] = criarUsuarioPadrao();
+            db.usuarios[alvoMute].mutado_ate = Date.now() + minutos * 60 * 1000;
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `🤫 @${alvoMute.split('@')[0]} foi silenciado por ${minutos} minutos.`, mentions: [alvoMute] }, { quoted: msg });
+            break;
+        }
+
+        case 'promover': {
+            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para promover." }, { quoted: msg });
+            const alvoPromover = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoPromover) return sock.sendMessage(from, { text: "❌ Marque o novo administrador!" }, { quoted: msg });
             await sock.groupParticipantsUpdate(from, [alvoPromover], "promote");
-            await sock.sendMessage(from, { text: `✨ Novo Administrador alocado: @${alvoPromover.split('@')[0]}!`, mentions: [alvoPromover] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `✨ Novo ADM: @${alvoPromover.split('@')[0]}!`, mentions: [alvoPromover] }, { quoted: msg });
             break;
+        }
 
-        case 'rebaixar':
-            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para alterar cargos!" }, { quoted: msg });
-            const alvoRebaixar = msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoRebaixar) return sock.sendMessage(from, { text: "❌ Marque o administrador que deseja rebaixar!" }, { quoted: msg });
-
+        case 'rebaixar': {
+            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Administrador para rebaixar." }, { quoted: msg });
+            const alvoRebaixar = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoRebaixar) return sock.sendMessage(from, { text: "❌ Marque o administrador a ser rebaixado!" }, { quoted: msg });
             await sock.groupParticipantsUpdate(from, [alvoRebaixar], "demote");
-            await sock.sendMessage(from, { text: `📉 O membro @${alvoRebaixar.split('@')[0]} perdeu suas credenciais administrativas!`, mentions: [alvoRebaixar] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `📉 @${alvoRebaixar.split('@')[0]} perdeu privilégios administrativos.`, mentions: [alvoRebaixar] }, { quoted: msg });
             break;
+        }
 
-        case 'antilink':
+        case 'antilink': {
             if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) return sock.sendMessage(from, { text: "🌊 Use: *!antilink on* ou *!antilink off*" }, { quoted: msg });
             gConfig.antilink = args[0] === 'on';
             salvarDB(db);
-            await sock.sendMessage(from, { text: `🛡️ Sistema *Anti-Links Comuns* definido como: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🛡️ Anti-Link: *${args[0].toUpperCase()}*.` }, { quoted: msg });
             break;
+        }
 
-        case 'antilink2':
+        case 'antilink2': {
             if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) return sock.sendMessage(from, { text: "🌊 Use: *!antilink2 on* ou *!antilink2 off* (Modo Hard-Ban)" }, { quoted: msg });
             gConfig.antilink2 = args[0] === 'on';
             salvarDB(db);
-            await sock.sendMessage(from, { text: `🚨 Sistema *Anti-Links Modo Hard (Ban)* definido como: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🚨 Anti-Link Hard: *${args[0].toUpperCase()}*.` }, { quoted: msg });
             break;
+        }
 
-        case 'fakes':
+        case 'antimidia': {
+            if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) return sock.sendMessage(from, { text: "🌊 Use: *!antimidia on* ou *!antimidia off*" }, { quoted: msg });
+            gConfig.antimidia = args[0] === 'on';
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `🎵 Anti-Mídia: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+            break;
+        }
+
+        case 'antipalavra': {
+            const acao = args[0]?.toLowerCase();
+            if (!acao || !['add', 'rem', 'list'].includes(acao)) {
+                return sock.sendMessage(from, { text: "❌ Use: `!antipalavra add/rem/list [palavra]`" }, { quoted: msg });
+            }
+            if (!gConfig.palavras_proibidas) gConfig.palavras_proibidas = [];
+            const palavra = args.slice(1).join(" ").trim().toLowerCase();
+
+            if (acao === 'list') {
+                const lista = gConfig.palavras_proibidas.length > 0 ? gConfig.palavras_proibidas.join(', ') : '(vazia)';
+                return sock.sendMessage(from, { text: `📋 Palavras proibidas: ${lista}` }, { quoted: msg });
+            }
+            if (!palavra) return sock.sendMessage(from, { text: "❌ Digite a palavra." }, { quoted: msg });
+
+            if (acao === 'add') {
+                if (gConfig.palavras_proibidas.includes(palavra)) return sock.sendMessage(from, { text: "⚠️ Palavra já está na lista." }, { quoted: msg });
+                gConfig.palavras_proibidas.push(palavra);
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `✅ Palavra "${palavra}" adicionada à lista negra.` }, { quoted: msg });
+            } else if (acao === 'rem') {
+                const index = gConfig.palavras_proibidas.indexOf(palavra);
+                if (index === -1) return sock.sendMessage(from, { text: "❌ Palavra não encontrada." }, { quoted: msg });
+                gConfig.palavras_proibidas.splice(index, 1);
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `✅ Palavra "${palavra}" removida.` }, { quoted: msg });
+            }
+            break;
+        }
+
+        case 'antiflood': {
+            if (args.length === 0) {
+                if (gConfig.antiflood) {
+                    return sock.sendMessage(from, { text: `🌊 Antiflood ativo: ${gConfig.antiflood.max} msgs / ${gConfig.antiflood.intervalo}s.` }, { quoted: msg });
+                }
+                return sock.sendMessage(from, { text: "🌊 Antiflood desativado. Use: `!antiflood [max] [segundos]`" }, { quoted: msg });
+            }
+            const max = parseInt(args[0]);
+            const intervalo = parseInt(args[1]);
+            if (isNaN(max) || isNaN(intervalo) || max <= 0 || intervalo <= 0) {
+                return sock.sendMessage(from, { text: "❌ Use: `!antiflood [max mensagens] [segundos]`" }, { quoted: msg });
+            }
+            gConfig.antiflood = { max, intervalo, acao: 'mute' };
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `🚨 Antiflood configurado: ${max} mensagens em ${intervalo}s (punição: mute 5 min).` }, { quoted: msg });
+            break;
+        }
+
+        case 'modolento': {
+            const segundos = parseInt(args[0]);
+            if (isNaN(segundos) || segundos < 0) {
+                return sock.sendMessage(from, { text: "❌ Use: `!modolento [segundos]` (0 para desativar)." }, { quoted: msg });
+            }
+            gConfig.slowmode_segundos = segundos;
+            salvarDB(db);
+            if (segundos === 0) {
+                await sock.sendMessage(from, { text: "🐢 Modo lento desativado." }, { quoted: msg });
+            } else {
+                await sock.sendMessage(from, { text: `🐢 Modo lento ativado: 1 mensagem a cada ${segundos}s por membro.` }, { quoted: msg });
+            }
+            break;
+        }
+
+        case 'fakes': {
             if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) return sock.sendMessage(from, { text: "🌊 Use: *!fakes on* ou *!fakes off*" }, { quoted: msg });
             gConfig.fakes = args[0] === 'on';
             salvarDB(db);
-            await sock.sendMessage(from, { text: `🌐 Bloqueio automático de DDI estrangeiro definido como: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🌐 Bloqueio de DDI estrangeiro: *${args[0].toUpperCase()}*.` }, { quoted: msg });
             break;
+        }
 
-        case 'grupo':
+        case 'bloquearcmd': {
+            if (!args[0]) return sock.sendMessage(from, { text: "❌ Informe o comando a alternar bloqueio. Ex: `!bloquearcmd roleta`" }, { quoted: msg });
+            const cmdBloq = args[0].toLowerCase().replace('!', '');
+            if (!gConfig.comandos_bloqueados) gConfig.comandos_bloqueados = [];
+            const pos = gConfig.comandos_bloqueados.indexOf(cmdBloq);
+            if (pos === -1) {
+                gConfig.comandos_bloqueados.push(cmdBloq);
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `🚫 Comando !${cmdBloq} bloqueado neste grupo.` }, { quoted: msg });
+            } else {
+                gConfig.comandos_bloqueados.splice(pos, 1);
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `✅ Comando !${cmdBloq} desbloqueado.` }, { quoted: msg });
+            }
+            break;
+        }
+
+        case 'fechar': {
+            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso de privilégios de ADM para fechar o grupo!" }, { quoted: msg });
+            const segundos = parseInt(args[0]);
+            if (isNaN(segundos) || segundos <= 0) return sock.sendMessage(from, { text: "❌ Use: `!fechar [segundos]`" }, { quoted: msg });
+            gConfig.fechado_ate = Date.now() + segundos * 1000;
+            await sock.groupSettingUpdate(from, 'announcement');
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `🔒 Grupo fechado por ${segundos} segundos. Apenas admins podem falar.` }, { quoted: msg });
+            break;
+        }
+
+        case 'grupo': {
             if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso de privilégios de ADM para alterar o status do grupo!" }, { quoted: msg });
             if (args[0] === 'fechar') {
                 await sock.groupSettingUpdate(from, 'announcement');
-                await sock.sendMessage(from, { text: "🔒 *CHAT FECHADO:* Apenas administradores podem enviar mensagens a partir de agora!" }, { quoted: msg });
+                await sock.sendMessage(from, { text: "🔒 *CHAT FECHADO:* Apenas administradores podem enviar mensagens!" }, { quoted: msg });
             } else if (args[0] === 'abrir') {
                 await sock.groupSettingUpdate(from, 'not_announcement');
-                await sock.sendMessage(from, { text: "🔓 *CHAT ABERTO:* Todos os integrantes já podem interagir livremente! 🌊" }, { quoted: msg });
+                await sock.sendMessage(from, { text: "🔓 *CHAT ABERTO:* Todos podem interagir livremente! 🌊" }, { quoted: msg });
             } else {
                 return sock.sendMessage(from, { text: "❌ Use: *!grupo abrir* ou *!grupo fechar*" }, { quoted: msg });
             }
             break;
+        }
 
-        case 'limpar':
-            let blocosVazios = " \n".repeat(250) + "🧹 *Histórico do chat limpo pela moderação!* 🌊";
-            await sock.sendMessage(from, { text: blocosVazios });
-            break;
+        case 'limparmsg': {
+            if (!botIsAdmin) return sock.sendMessage(from, { text: "❌ Preciso ser Admin para limpar mensagens." }, { quoted: msg });
+            const alvoLimpar = obterAlvo(msg) || msg.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+            if (!alvoLimpar) return sock.sendMessage(from, { text: "❌ Marque ou responda ao membro cujas mensagens serão apagadas." }, { quoted: msg });
 
-        case 'marcar':
-            let todosMembros = participants.map(p => p.id);
-            let mencTxt = `📣 *𝗠𝗔𝗥𝗖𝗔𝗖𝗔𝗢 𝗚𝗘𝗥𝗔𝗟 𝗠𝗢𝗗𝗘𝗥𝗔𝗖𝗔𝗢* 📣\n\n💬 *Aviso:* ${args.join(" ") || "Olhem o chat!"}\n\n`;
-            todosMembros.forEach(m => { mencTxt += `➔ @${m.split('@')[0]}\n`; });
-            await sock.sendMessage(from, { text: mencTxt, mentions: todosMembros });
-            break;
+            let qtd = parseInt(args[1] || args[0]) || 1;
+            if (qtd > 10) qtd = 10; // limite seguro
 
-        case 'adms':
-            let apenasAdms = participants.filter(p => p.admin !== null).map(p => p.id);
-            let admTxt = `🛡️ *𝗖𝗛𝗔𝗠𝗔𝗡𝗗𝗢 𝗔𝗗𝗠𝗜𝗡𝗜𝗦𝗧𝗥𝗔𝗗𝗢𝗥𝗘𝗦* 🛡️\n\n📌 *Chamado por:* @${sender.split('@')[0]}\n⚠️ *Motivo:* ${args.join(" ") || "Revisar infração no grupo."}\n\n`;
-            apenasAdms.forEach(a => { admTxt += `⚡ @${a.split('@')[0]}\n`; });
-            await sock.sendMessage(from, { text: admTxt, mentions: [...apenasAdms, sender] }, { quoted: msg });
-            break;
-
-        case 'setregras':
-            if (!args[0]) return sock.sendMessage(from, { text: "❌ Forneça o texto com as novas regras! Ex: `!setregras 1. Sem Spam`" }, { quoted: msg });
-            gConfig.regras = args.join(" ");
-            salvarDB(db);
-            await sock.sendMessage(from, { text: "📝 *ESTATUTO CONFIGURADO:* As regras oficiais do grupo foram salvas com sucesso! Use *!regras* para ler." }, { quoted: msg });
-            break;
-
-        case 'regras':
-            const regrasTxt = `╔═══════════════════════════════════════╗\n          📜  𝗡𝗢𝗥𝗠𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  📜\n╚═══════════════════════════════════════╗\n\n ${gConfig.regras || "Nenhuma regra cadastrada ainda."}\n\n─────────────────────────────────────────\n 🌊 Evite punições, colabore com o grupo! 💧\n╚═══════════════════════════════════════╝`;
-            await sock.sendMessage(from, { text: regrasTxt }, { quoted: msg });
-            break;
-
-        case 'setwelcome1':
-        case 'setwelcome2':
-        case 'setwelcome3':
-            const slotNum = comando.replace('setwelcome', '');
-            if (!args[0]) return sock.sendMessage(from, { text: `❌ Digite o texto para salvar no slot de Boas-Vindas ${slotNum}!` }, { quoted: msg });
-            gConfig[`bv${slotNum}`] = args.join(" ");
-            salvarDB(db);
-            await sock.sendMessage(from, { text: `✅ *SLOT DE BOAS-VINDAS ${slotNum} CONFIGURADO!*` }, { quoted: msg });
-            break;
-
-        case 'bv1':
-        case 'bv2':
-        case 'bv3':
-            gConfig.bv_ativo = comando;
-            salvarDB(db);
-            await sock.sendMessage(from, { text: `✅ Modelo de Boas-Vindas *${comando.toUpperCase()}* selecionado como ativo!\n\n📋 *Prévia:*\n${gConfig[comando] || ("(slot vazio, configure com !setwelcome" + comando.replace('bv', '') + ")")}` }, { quoted: msg });
-            break;
-
-        case 'atividade':
-            const idsGrupoAtiv = participants.map(p => p.id);
-            const rankAtividade = idsGrupoAtiv
-                .filter(id => db.usuarios[id])
-                .map(id => ({ id, msgs: db.usuarios[id].mensagens_contadas || 0 }))
-                .sort((a, b) => b.msgs - a.msgs)
-                .slice(0, 15);
-
-            let atividadeTxt = `╔═══════════════════════════════════════╗\n          📊  𝗥𝗔𝗡𝗞𝗜𝗡𝗚 𝗗𝗘 𝗔𝗧𝗜𝗩𝗜𝗗𝗔𝗗𝗘  📊\n╚═══════════════════════════════════════╝\n\n`;
-            if (rankAtividade.length === 0) {
-                atividadeTxt += "Nenhum dado de atividade registrado ainda.\n";
-            } else {
-                rankAtividade.forEach((m, idx) => { atividadeTxt += ` ${idx + 1}º ➔ @${m.id.split('@')[0]} — ${m.msgs} mensagens\n`; });
+            try {
+                const mensagens = await sock.loadMessages(from, 50); // carrega últimas 50
+                const msgsAlvo = mensagens.filter(m => m.key.participant === alvoLimpar || m.key.remoteJid === alvoLimpar).slice(0, qtd);
+                for (const m of msgsAlvo) {
+                    await sock.sendMessage(from, { delete: m.key }).catch(() => {});
+                }
+                await sock.sendMessage(from, { text: `🧹 ${msgsAlvo.length} mensagens de @${alvoLimpar.split('@')[0]} apagadas.`, mentions: [alvoLimpar] }, { quoted: msg });
+            } catch (e) {
+                console.error('[limparmsg] Erro:', e);
+                await sock.sendMessage(from, { text: "❌ Não foi possível carregar as mensagens. Tente novamente." }, { quoted: msg });
             }
-            atividadeTxt += `╚═══════════════════════════════════════╝`;
-            await sock.sendMessage(from, { text: atividadeTxt, mentions: rankAtividade.map(m => m.id) }, { quoted: msg });
             break;
+        }
 
-        case 'online':
-            const agora = Date.now();
-            const idsGrupoOnline = participants.map(p => p.id);
-            const recentes = idsGrupoOnline
-                .filter(id => db.usuarios[id]?.ultima_interacao && (agora - db.usuarios[id].ultima_interacao) < 86400000)
-                .sort((a, b) => db.usuarios[b].ultima_interacao - db.usuarios[a].ultima_interacao);
+        case 'inativos': {
+            const dias = parseInt(args[0]) || 30;
+            const remover = args.includes('remover');
+            const limite = Date.now() - dias * 24 * 60 * 60 * 1000;
 
-            let onlineTxt = `╔═══════════════════════════════════════╗\n          🟢  𝗠𝗘𝗠𝗕𝗥𝗢𝗦 𝗔𝗧𝗜𝗩𝗢𝗦 (𝟮𝟰𝗵)  🟢\n╚═══════════════════════════════════════╝\n\n`;
-            if (recentes.length === 0) {
-                onlineTxt += "Nenhuma atividade registrada nas últimas 24 horas.\n";
-            } else {
-                recentes.forEach(id => { onlineTxt += ` 🟢 @${id.split('@')[0]}\n`; });
+            const inativos = participants.filter(p => {
+                const id = p.id;
+                const user = db.usuarios[id];
+                return !user || !user.ultima_interacao || user.ultima_interacao < limite;
+            });
+
+            if (inativos.length === 0) {
+                return sock.sendMessage(from, { text: `✅ Nenhum membro inativo há ${dias} dias.` }, { quoted: msg });
             }
-            onlineTxt += `╚═══════════════════════════════════════╝`;
-            await sock.sendMessage(from, { text: onlineTxt, mentions: recentes }, { quoted: msg });
-            break;
 
-        default:
-            break;
-    }
-};
+            let listaInativos = `💤 *MEMBROS INATIVOS (${dias} dias):*\n`;
+            inativos.forEach(p => {
+                listaInativos += `➔ @${p.id.split('@')[0]}\n`;
+            });
+
+            if (remover && botIsAdmin) {
+                for (const p of inativos) {
+                    await sock.groupParticipantsUpdate(from, [p.id], "remove").catch(() => {});
+                }
+                listaInativos += `\n🚨 ${inativos.length} membros removidos.`;
+                await sock.sendMessage(from, { text: listaInativos, mentions: inativos.map(p => p.id) }, { quoted: msg });
+            } else {
+                if (remover) listaInativos += "\n❌ Não sou admin para remover.";
+                await sock.sendMessage(from, { text: listaInativos, mentions: inativos.map(p => p.id) }, { quoted: msg });
+      
