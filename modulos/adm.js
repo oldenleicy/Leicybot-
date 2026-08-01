@@ -327,4 +327,120 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             } else {
                 if (remover) listaInativos += "\n❌ Não sou admin para remover.";
                 await sock.sendMessage(from, { text: listaInativos, mentions: inativos.map(p => p.id) }, { quoted: msg });
-      
+            }
+            break;
+        }
+
+        case 'limpar': {
+            let blocosVazios = " \n".repeat(250) + "🧹 *Histórico do chat limpo pela moderação!* 🌊";
+            await sock.sendMessage(from, { text: blocosVazios });
+            break;
+        }
+
+        case 'marcar': {
+            let todosMembros = participants.map(p => p.id);
+            let mencTxt = `📣 *𝗠𝗔𝗥𝗖𝗔𝗖𝗔𝗢 𝗚𝗘𝗥𝗔𝗟* 📣\n\n💬 ${args.join(" ") || "Olhem o chat!"}\n\n`;
+            todosMembros.forEach(m => { mencTxt += `➔ @${m.split('@')[0]}\n`; });
+            await sock.sendMessage(from, { text: mencTxt, mentions: todosMembros });
+            break;
+        }
+
+        case 'adms': {
+            let apenasAdms = participants.filter(p => p.admin !== null).map(p => p.id);
+            let admTxt = `🛡️ *𝗖𝗛𝗔𝗠𝗔𝗡𝗗𝗢 𝗔𝗗𝗠𝗜𝗡𝗜𝗦𝗧𝗥𝗔𝗗𝗢𝗥𝗘𝗦* 🛡️\n\n📌 Chamado por: @${sender.split('@')[0]}\n⚠️ Motivo: ${args.join(" ") || "Revisar infração"}\n\n`;
+            apenasAdms.forEach(a => { admTxt += `⚡ @${a.split('@')[0]}\n`; });
+            await sock.sendMessage(from, { text: admTxt, mentions: [...apenasAdms, sender] }, { quoted: msg });
+            break;
+        }
+
+        case 'setregras': {
+            if (!args[0]) return sock.sendMessage(from, { text: "❌ Forneça o texto das regras." }, { quoted: msg });
+            gConfig.regras = args.join(" ");
+            salvarDB(db);
+            await sock.sendMessage(from, { text: "📝 Regras do grupo atualizadas!" }, { quoted: msg });
+            break;
+        }
+
+        case 'regras': {
+            const regrasTxt = `╔═══════════════════════════════════════╗\n          📜  𝗡𝗢𝗥𝗠𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  📜\n╚═══════════════════════════════════════╗\n\n ${gConfig.regras || "Nenhuma regra cadastrada."}\n\n─────────────────────────────────────────\n 🌊 Evite punições, colabore! 💧\n╚═══════════════════════════════════════╝`;
+            await sock.sendMessage(from, { text: regrasTxt }, { quoted: msg });
+            break;
+        }
+
+        case 'setwelcome1':
+        case 'setwelcome2':
+        case 'setwelcome3': {
+            const slotNum = comando.replace('setwelcome', '');
+            if (!args[0]) return sock.sendMessage(from, { text: `❌ Digite o texto do slot de Boas-Vindas ${slotNum}.` }, { quoted: msg });
+            gConfig[`bv${slotNum}`] = args.join(" ");
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `✅ Slot BV ${slotNum} configurado!` }, { quoted: msg });
+            break;
+        }
+
+        case 'bv1':
+        case 'bv2':
+        case 'bv3': {
+            gConfig.bv_ativo = comando;
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `✅ Modelo ${comando.toUpperCase()} ativo.\n📋 Prévia: ${gConfig[comando] || "(vazio)"}` }, { quoted: msg });
+            break;
+        }
+
+        case 'boasvindas': {
+            if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) return sock.sendMessage(from, { text: "🌊 Use: *!boasvindas on* ou *!boasvindas off*" }, { quoted: msg });
+            gConfig.boasvindas = args[0] === 'on';
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `👋 Boas-Vindas: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+            break;
+        }
+
+        case 'atividade': {
+            const idsGrupo = participants.map(p => p.id);
+            const rank = idsGrupo
+                .filter(id => db.usuarios[id])
+                .map(id => ({ id, msgs: db.usuarios[id].mensagens_contadas || 0 }))
+                .sort((a, b) => b.msgs - a.msgs)
+                .slice(0, 15);
+            let txt = `📊 *RANKING DE ATIVIDADE*\n\n`;
+            if (rank.length === 0) txt += "Nenhum dado ainda.\n";
+            else rank.forEach((m, i) => txt += ` ${i+1}º @${m.id.split('@')[0]} — ${m.msgs} msgs\n`);
+            await sock.sendMessage(from, { text: txt, mentions: rank.map(r => r.id) }, { quoted: msg });
+            break;
+        }
+
+        case 'online': {
+            const agora = Date.now();
+            const recentes = participants
+                .map(p => p.id)
+                .filter(id => db.usuarios[id]?.ultima_interacao && (agora - db.usuarios[id].ultima_interacao) < 86400000)
+                .sort((a, b) => db.usuarios[b].ultima_interacao - db.usuarios[a].ultima_interacao);
+            let txt = `🟢 *ATIVOS NAS ÚLTIMAS 24H*\n\n`;
+            if (recentes.length === 0) txt += "Nenhuma atividade recente.\n";
+            else recentes.forEach(id => txt += `🟢 @${id.split('@')[0]}\n`);
+            await sock.sendMessage(from, { text: txt, mentions: recentes }, { quoted: msg });
+            break;
+        }
+
+        case 'config': {
+            const cfg = db.grupos[from];
+            const resumo = `⚙️ *CONFIGURAÇÕES DO GRUPO*\n
+👋 Boas-vindas: ${cfg.boasvindas ? 'ON' : 'OFF'}
+🛡️ Anti-Link: ${cfg.antilink ? 'ON' : 'OFF'}
+🚨 Anti-Link Hard: ${cfg.antilink2 ? 'ON' : 'OFF'}
+🌐 Fakes (DDI): ${cfg.fakes ? 'ON' : 'OFF'}
+🎵 Anti-Mídia: ${cfg.antimidia ? 'ON' : 'OFF'}
+🐢 Slow Mode: ${cfg.slowmode_segundos > 0 ? cfg.slowmode_segundos + 's' : 'OFF'}
+🚦 Antiflood: ${cfg.antiflood ? cfg.antiflood.max + ' msgs/' + cfg.antiflood.intervalo + 's' : 'OFF'}
+🔒 Fechado até: ${cfg.fechado_ate ? new Date(cfg.fechado_ate).toLocaleTimeString() : 'N/A'}
+📝 Regras: ${cfg.regras ? 'Definidas' : 'Nenhuma'}
+🔇 Palavras proibidas: ${cfg.palavras_proibidas?.length || 0}
+🚫 Comandos bloqueados: ${cfg.comandos_bloqueados?.length || 0}`;
+            await sock.sendMessage(from, { text: resumo }, { quoted: msg });
+            break;
+        }
+
+        default:
+            break;
+    }
+};
