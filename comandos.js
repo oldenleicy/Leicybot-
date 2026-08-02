@@ -3,7 +3,7 @@ const path = require('path');
 const ajudaTextos = require('./ajuda_textos');
 const interacaoTextos = require('./interacao_textos');
 const criarUsuarioPadrao = require('./modulos/usuarioPadrao');
-const { resolverIdentidade } = require('./modulos/jidUtils'); // obterAlvo NÃO é usado aqui diretamente
+const { resolverIdentidade } = require('./modulos/jidUtils');
 
 // Importação dos módulos especializados
 const donoModulo = require('./modulos/dono');
@@ -16,7 +16,7 @@ const outrosModulo = require('./modulos/outros');
 const DONO_OFICIAL = '258877080511@s.whatsapp.net';
 const REGEX_LINK = /https?:\/\/|www\.|chat\.whatsapp\.com|wa\.me\//i;
 
-// Trava anti-duplo-clique por usuário
+// Trava anti-duplo-clique
 const locks = new Map();
 
 const lidarComComando = async (sock, msg, db, salvarDB) => {
@@ -27,19 +27,20 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         const isGroup = from.endsWith('@g.us');
         let sender = resolverIdentidade(msg.key);
 
-        // Garantias iniciais
         if (!db) db = { usuarios: {}, grupos: {}, config_bot: {} };
         if (!db.usuarios) db.usuarios = {};
         if (!db.grupos) db.grupos = {};
-        if (!db.config_bot) db.config_bot = {
-            nome_bot: "LeicyBot",
-            url_foto_menu: "https://i.imgur.com/Kdf946S.png",
-            manutencao: false,
-            pausado: false,
-            comandos_desativados: [],
-            titulos_criados: ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"],
-            ddi_permitido: "258"
-        };
+        if (!db.config_bot) {
+            db.config_bot = {
+                nome_bot: "LeicyBot",
+                url_foto_menu: "https://i.imgur.com/Kdf946S.png",
+                manutencao: false,
+                pausado: false,
+                comandos_desativados: [],
+                titulos_criados: ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"],
+                ddi_permitido: "258"
+            };
+        }
 
         if (!db.usuarios[sender]) {
             db.usuarios[sender] = criarUsuarioPadrao();
@@ -50,21 +51,12 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
                              msg.message.imageMessage?.caption ||
                              msg.message.videoMessage?.caption || "";
 
-        // Atualiza contadores
         db.usuarios[sender].mensagens_contadas = (db.usuarios[sender].mensagens_contadas || 0) + 1;
         db.usuarios[sender].ultima_interacao = Date.now();
 
-        // Verificações que se aplicam a TODAS as mensagens (mesmo não comandos)
+        // Antilink (mantido aqui)
         if (isGroup) {
             const gConfig = db.grupos[from] || {};
-
-            // Verificação de mute (já feita no index, mas redundância segura)
-            if (db.usuarios[sender].mutado_ate && db.usuarios[sender].mutado_ate > Date.now()) {
-                await sock.sendMessage(from, { delete: msg.key }).catch(() => {});
-                return;
-            }
-
-            // Antilink (mantido aqui para não perder a lógica existente)
             if ((gConfig.antilink || gConfig.antilink2) && REGEX_LINK.test(corpoMensagem)) {
                 try {
                     const groupMetadata = await sock.groupMetadata(from);
@@ -89,7 +81,7 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             }
         }
 
-        // Bônus diário e anúncio de título (apenas para mensagens que NÃO são comandos)
+        // Bônus diário e anúncio de título (mensagens que NÃO são comandos)
         if (!corpoMensagem.startsWith('!')) {
             const hoje = new Date().toLocaleDateString();
             const u = db.usuarios[sender];
@@ -100,9 +92,9 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
                 await sock.sendMessage(from, { text: `🌅 *BÔNUS DIÁRIO:* +20 🪙 por estar ativo hoje!` }, { quoted: msg }).catch(() => {});
             }
 
-            // Anúncio de títulos (apenas se tiver slot1 ou slot2)
-            if ((u.titulo_slot1 || u.titulo_slot2) && (!u.ultimo_anuncio || Date.now() - u.ultimo_anuncio > 10800000)) {
-                const anuncio = interacaoTextos.obterAnuncioTitulo(u.titulo_slot1, u.titulo_slot2);
+            // Anúncio de título (usa titulo_1 e titulo_2)
+            if ((u.titulo_1 || u.titulo_2) && (!u.ultimo_anuncio || Date.now() - u.ultimo_anuncio > 10800000)) {
+                const anuncio = interacaoTextos.obterAnuncioTitulo(u.titulo_1, u.titulo_2);
                 if (anuncio) {
                     await sock.sendMessage(from, { text: anuncio }, { quoted: msg }).catch(() => {});
                     u.ultimo_anuncio = Date.now();
@@ -113,33 +105,25 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
             return;
         }
 
-        // ═══════ COMANDOS (começam com '!') ═══════
+        // ═══════ COMANDOS ═══════
         const argumentos = corpoMensagem.trim().split(/ +/);
         const comandoUnico = argumentos.shift().toLowerCase().replace('!', '');
 
-        // Permissão especial de comando
         const possuiPermissaoComando = db.usuarios[sender]?.permissoes_especiais?.includes(comandoUnico);
 
-        // Comandos bloqueados no grupo
         const gConfig = db.grupos[from] || {};
         if (isGroup && gConfig.comandos_bloqueados?.includes(comandoUnico)) {
             return sock.sendMessage(from, { text: `🚫 Comando *!${comandoUnico}* desativado neste grupo.` }, { quoted: msg });
         }
 
-        // Bot pausado (dono)
         if (db.config_bot.pausado && sender !== DONO_OFICIAL) return;
-
-        // Manutenção
         if (db.config_bot.manutencao && sender !== DONO_OFICIAL) {
-            return sock.sendMessage(from, { text: "⚠️ *MANUTENÇÃO:* Volto em breve! 🌊" }, { quoted: msg });
+            return sock.sendMessage(from, { text: "⚠️ *MANUTENÇÃO:* Meus sistemas estão sendo calibrados pelo chefe *Olden*. Volto em breve! 🌊" }, { quoted: msg });
         }
-
-        // Comandos desativados globalmente
         if (db.config_bot.comandos_desativados?.includes(comandoUnico)) {
             return sock.sendMessage(from, { text: `🚫 Comando *!${comandoUnico}* desativado globalmente.` }, { quoted: msg });
         }
 
-        // Função para executar com trava anti-duplo
         const executarComTrava = async (fn) => {
             while (locks.get(sender)) await locks.get(sender);
             const promise = fn().finally(() => locks.delete(sender));
@@ -148,10 +132,9 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         };
 
         // ═══ ROTEAMENTO ═══
-        // Comandos gerais
         if (comandoUnico === 'menu' || comandoUnico === 'help') {
             const foto = db.config_bot.url_foto_menu || "https://i.imgur.com/Kdf946S.png";
-            const menu = `🌊 *LEICYBOT MENU* 🌊\n\n🪙 !menugold\n🛡️ !menuadm\n🎮 !menujogos\n🎵 !menumidia\n📊 !menuoutros\n👑 !menudono\n\nDúvidas: !ajuda [comando]`;
+            const menu = `░▒▓█████████████████████████████████████▓▒░\n▓██          🌊  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗘𝗡𝗨  💧         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🤖 Olá! Eu sou o Leicybot. Escolha uma das centrais de comando abaixo:\n\n🪙 *!menugold* ➔ Painel de Economia Reais, Cassino e Jogos.\n🛡️ *!menuadm* ➔ Ferramentas de Moderação e Defesa.\n🎮 *!menujogos* ➔ Jogos Sociais e Entretenimento.\n🎵 *!menumidia* ➔ Criação de Figurinhas e Letras.\n📊 *!menuoutros* ➔ Perfil Customizado e Status.\n👑 *!menudono* ➔ Títulos Especiais e Configurações de Elite.\n\n📖 *💡 DICA:* Ficou com dúvidas? Digite: *!ajuda [comando]*\n░▒▓█████████████████████████████████████▓▒░`;
             try {
                 return await sock.sendMessage(from, { image: { url: foto }, caption: menu }, { quoted: msg });
             } catch (e) {
@@ -203,11 +186,10 @@ const lidarComComando = async (sock, msg, db, salvarDB) => {
         // Dono
         const cmdsDono = ['menudono','manutencao','burlar','desativarcmd','ativarcmd','addgold','remgold','addcelestial','setfoto','nomebot','limpardb','transmitir','reiniciar','desligar','ligar','criartitulo','dartitulo','removoertitulo','concederpermissao','ping','backup','listagrupos','estatisticas'];
         if (cmdsDono.includes(comandoUnico)) {
-            if (sender !== DONO_OFICIAL) return sock.sendMessage(from, { text: "❌ Acesso restrito ao dono!" }, { quoted: msg });
+            if (sender !== DONO_OFICIAL) return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Restrito ao meu criador oficial *Olden*! 👑" }, { quoted: msg });
             return executarComTrava(() => donoModulo(sock, msg, comandoUnico, argumentos, db, salvarDB));
         }
 
-        // Comando inexistente
         await sock.sendMessage(from, { text: interacaoTextos.comandoInexistente() }, { quoted: msg });
 
     } catch (error) {
