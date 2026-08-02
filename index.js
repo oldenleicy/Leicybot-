@@ -1,5 +1,4 @@
 // ─── GARANTE QUE O "crypto" GLOBAL EXISTA (independente da versão do Node) ───
-// Precisa vir ANTES de qualquer outro require, incluindo o do Baileys.
 if (typeof globalThis.crypto === 'undefined') {
     const nodeCrypto = require('crypto');
     if (nodeCrypto.webcrypto) {
@@ -14,6 +13,7 @@ const pino = require('pino');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const criarUsuarioPadrao = require('./modulos/usuarioPadrao'); // importado no topo
 
 // ─── CONTORNO DO BUG CONHECIDO DO BAILEYS (issue #2679) ───
 async function obterVersaoProtocolo() {
@@ -83,7 +83,6 @@ try {
         const conteudo = fs.readFileSync(caminhoDB, 'utf-8').trim();
         if (conteudo && conteudo !== "") {
             db = JSON.parse(conteudo);
-            // Garante que subobjetos essenciais existam
             if (!db.config_bot) db.config_bot = estruturaPadrao.config_bot;
             if (!db.usuarios) db.usuarios = estruturaPadrao.usuarios;
             if (!db.grupos) db.grupos = estruturaPadrao.grupos;
@@ -109,24 +108,22 @@ function salvarDB(dadosNovos) {
     }
 }
 
-// ─── MIGRAÇÃO AUTOMÁTICA DO BANCO ANTIGO ───
-// Converte titulo_especial (campo antigo) para titulo_slot2 (novo slot de título especial)
-// e titulo_1 (título comprado antigo) para titulo_slot1, se ainda não existir.
+// ⚠️ MIGRAÇÃO: converte campos antigos para o novo padrão (slot1/slot2)
 let migrado = false;
 Object.values(db.usuarios).forEach(u => {
-    // Migra título especial -> slot2
+    // titulo_especial -> slot2
     if (u.titulo_especial && !u.titulo_slot2) {
         u.titulo_slot2 = u.titulo_especial;
         delete u.titulo_especial;
         migrado = true;
     }
-    // Migra título comprado antigo (titulo_1) -> slot1, se não houver já um slot1 preenchido
+    // titulo_1 -> slot1
     if (u.titulo_1 && !u.titulo_slot1) {
         u.titulo_slot1 = u.titulo_1;
         delete u.titulo_1;
         migrado = true;
     }
-    // Remove titulo_2 (o novo sistema só tem 2 slots fixos, então o terceiro título é descartado)
+    // Remove titulo_2 (não usado mais)
     if (u.titulo_2) {
         delete u.titulo_2;
         migrado = true;
@@ -138,7 +135,6 @@ if (migrado) {
 }
 
 const MEU_NUMERO_WHATSAPP = '258840504242';
-
 let statusConexao = "Iniciando aplicação...";
 let botSocket = null;
 
@@ -169,7 +165,6 @@ function limparSessaoInvalida() {
 async function iniciarBot() {
     const pastaAuth = path.join(__dirname, 'auth_info');
 
-    // Restaura sessão a partir da variável de ambiente, se disponível
     if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
         try {
             fs.mkdirSync(pastaAuth, { recursive: true });
@@ -196,7 +191,6 @@ async function iniciarBot() {
         browser: ['Mac OS', 'Chrome', '124.0.0.0']
     });
 
-    // Salva as credenciais sempre que atualizadas e imprime a string para variável de ambiente
     botSocket.ev.on('creds.update', async () => {
         try {
             await saveCreds();
@@ -226,7 +220,6 @@ async function iniciarBot() {
 
     let timeoutPareamento = null;
 
-    // Gera código de pareamento se o bot não estiver registrado
     if (!botSocket.authState.creds.registered) {
         statusConexao = "Aguardando geração do código de pareamento...";
         timeoutPareamento = setTimeout(async () => {
@@ -245,7 +238,6 @@ async function iniciarBot() {
         }, 10000);
     }
 
-    // Monitora o estado da conexão
     botSocket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
@@ -253,12 +245,9 @@ async function iniciarBot() {
                 clearTimeout(timeoutPareamento);
                 timeoutPareamento = null;
             }
-
             const statusCode = (lastDisconnect?.error)?.output?.statusCode;
             statusConexao = `Desconectado (Status: ${statusCode})`;
             console.log(`[CONEXÃO] Fechada com código: ${statusCode}`);
-            console.log(`[CONEXÃO] Detalhe do erro real:`, lastDisconnect?.error?.message || lastDisconnect?.error || '(nenhum detalhe disponível)');
-
             if ([401, 403, 405, 428, DisconnectReason.loggedOut].includes(statusCode)) {
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
@@ -271,55 +260,45 @@ async function iniciarBot() {
         }
     });
 
-    // Processamento de todas as mensagens recebidas
+    // Processamento de mensagens (com filtros de moderação ANTES dos comandos)
     botSocket.ev.on('messages.upsert', async (m) => {
         if (m.type !== 'notify') return;
         for (const msg of m.messages) {
-            // Ignora mensagens enviadas pelo próprio bot
             if (msg.key.fromMe) continue;
 
             const from = msg.key.remoteJid;
+            const sender = msg.key.participant || msg.key.remoteJid;
 
-            // ═══════════════════════════════════════════════════
-            // 🔓 REABERTURA AUTOMÁTICA DE GRUPO (fechamento temporário)
-            // ═══════════════════════════════════════════════════
-            if (from.endsWith('@g.us') && db.grupos[from]) {
-                const gConfig = db.grupos[from];
-                if (gConfig.fechado_ate && Date.now() > gConfig.fechado_ate) {
-                    try {
-                        await botSocket.groupSettingUpdate(from, 'not_announcement');
-                        delete gConfig.fechado_ate;
-                        salvarDB(db);
-                        console.log(`[GRUPO] Grupo ${from} reaberto automaticamente.`);
-                    } catch (e) {
-                        console.error('[GRUPO] Erro ao reabrir:', e.message);
-                    }
+            // Inicializa usuário se necessário
+            if (!db.usuarios[sender]) {
+                db.usuarios[sender] = criarUsuarioPadrao();
+            }
+
+            // REABERTURA AUTOMÁTICA DE GRUPO
+            if (from.endsWith('@g.us') && db.grupos[from]?.fechado_ate && Date.now() > db.grupos[from].fechado_ate) {
+                try {
+                    await botSocket.groupSettingUpdate(from, 'not_announcement');
+                    delete db.grupos[from].fechado_ate;
+                    salvarDB(db);
+                    console.log(`[GRUPO] ${from} reaberto automaticamente.`);
+                } catch (e) {
+                    console.error('[GRUPO] Erro ao reabrir:', e.message);
                 }
             }
 
-            // ═══════════════════════════════════════════════════
-            // 🛡️ FILTROS DE MODERAÇÃO (aplicados antes de processar comandos)
-            // ═══════════════════════════════════════════════════
-            // Só aplica se for grupo e se a configuração existir
+            // FILTROS DE MODERAÇÃO (só para grupos)
             if (from.endsWith('@g.us') && db.grupos[from]) {
                 const gConfig = db.grupos[from];
-                const sender = msg.key.participant || msg.key.remoteJid;
                 const agora = Date.now();
 
-                // Inicializa usuário se não existir
-                if (!db.usuarios[sender]) {
-                    const criarUsuarioPadrao = require('./modulos/usuarioPadrao');
-                    db.usuarios[sender] = criarUsuarioPadrao();
-                }
-
-                // 1. MUTE TEMPORÁRIO
+                // 1. MUTE
                 if (db.usuarios[sender].mutado_ate && db.usuarios[sender].mutado_ate > agora) {
                     await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
                     return;
                 }
 
-                // 2. SLOW MODE (modo lento)
-                if (gConfig.slowmode_segundos && gConfig.slowmode_segundos > 0) {
+                // 2. SLOW MODE
+                if (gConfig.slowmode_segundos > 0) {
                     const ultima = db.usuarios[sender].ultima_mensagem_slow;
                     if (ultima && (agora - ultima) < gConfig.slowmode_segundos * 1000) {
                         await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
@@ -329,38 +308,34 @@ async function iniciarBot() {
                 }
 
                 // 3. ANTIFLOOD
-                if (gConfig.antiflood && gConfig.antiflood.max > 0) {
+                if (gConfig.antiflood?.max > 0) {
                     if (!db.usuarios[sender].historico_mensagens) db.usuarios[sender].historico_mensagens = [];
                     db.usuarios[sender].historico_mensagens = db.usuarios[sender].historico_mensagens.filter(ts => agora - ts < gConfig.antiflood.intervalo * 1000);
                     db.usuarios[sender].historico_mensagens.push(agora);
                     if (db.usuarios[sender].historico_mensagens.length > gConfig.antiflood.max) {
-                        // Punição: mute de 5 minutos
                         db.usuarios[sender].mutado_ate = agora + 5 * 60 * 1000;
                         salvarDB(db);
-                        await botSocket.sendMessage(from, {
-                            text: `🤫 @${sender.split('@')[0]} foi silenciado por 5 minutos (flood).`,
-                            mentions: [sender]
-                        }).catch(() => {});
+                        await botSocket.sendMessage(from, { text: `🤫 @${sender.split('@')[0]} silenciado por 5 minutos (flood).`, mentions: [sender] }).catch(() => {});
                         await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
                         return;
                     }
                 }
 
-                // 4. ANTIMIDIA (bloqueia mídias de não-admins)
+                // 4. ANTIMIDIA
                 if (gConfig.antimidia && (msg.message?.imageMessage || msg.message?.videoMessage || msg.message?.audioMessage || msg.message?.stickerMessage || msg.message?.documentMessage)) {
                     try {
-                        const groupMetadata = await botSocket.groupMetadata(from);
+                        const metadata = await botSocket.groupMetadata(from);
                         const botId = botSocket.user.id.split(':')[0] + '@s.whatsapp.net';
-                        const admsGrupo = groupMetadata.participants.filter(p => p.admin !== null).map(p => p.id);
-                        if (!admsGrupo.includes(sender) && sender !== '258877080511@s.whatsapp.net') {
+                        const adms = metadata.participants.filter(p => p.admin).map(p => p.id);
+                        if (!adms.includes(sender) && sender !== '258877080511@s.whatsapp.net') {
                             await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
                             return;
                         }
-                    } catch (e) { /* se falhar metadata, permite */ }
+                    } catch (e) {}
                 }
 
-                // 5. ANTIPALAVRA (filtra palavras proibidas)
-                if (gConfig.palavras_proibidas && gConfig.palavras_proibidas.length > 0) {
+                // 5. ANTIPALAVRA
+                if (gConfig.palavras_proibidas?.length > 0) {
                     const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
                     if (texto && gConfig.palavras_proibidas.some(p => texto.toLowerCase().includes(p.toLowerCase()))) {
                         await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
@@ -369,59 +344,32 @@ async function iniciarBot() {
                 }
             }
 
-            // ═══════════════════════════════════════════════════
-            // 📨 PROCESSAMENTO DA MENSAGEM PELO ROTEADOR DE COMANDOS
-            // ═══════════════════════════════════════════════════
+            // Passa para o roteador de comandos
             if (msg.message) {
-                await lidarComComando(botSocket, msg, db, salvarDB).catch(e =>
-                    console.error('[ERRO INTERNO CAPTURADO]:', e)
-                );
+                await lidarComComando(botSocket, msg, db, salvarDB).catch(e => console.error('[ERRO INTERNO]:', e));
             }
         }
     });
 
-    // ─── ENTRADA/SAÍDA DE MEMBROS — boas-vindas e bloqueio de DDI estrangeiro ───
+    // Entrada de novos membros (boas-vindas + fakes)
     botSocket.ev.on('group-participants.update', async (update) => {
         try {
             const { id: groupId, participants, action } = update;
             if (action !== 'add') return;
-
-            if (!db.grupos) db.grupos = {};
             const gConfig = db.grupos[groupId];
             if (!gConfig) return;
 
-            for (const participantJid of participants) {
-                const numero = participantJid.split('@')[0];
-
-                // FAKES: expulsa DDI fora do padrão configurado
-                if (gConfig.fakes) {
-                    const ddiPermitido = (db.config_bot && db.config_bot.ddi_permitido) || '258';
-                    if (!numero.startsWith(ddiPermitido)) {
-                        try {
-                            await botSocket.groupParticipantsUpdate(groupId, [participantJid], 'remove');
-                            await botSocket.sendMessage(groupId, {
-                                text: `🌐 Número estrangeiro @${numero} removido automaticamente (DDI fora do padrão +${ddiPermitido}).`,
-                                mentions: [participantJid]
-                            });
-                        } catch (e) {
-                            console.error('[FAKES] Falha ao remover:', e.message);
-                        }
-                        continue;
-                    }
+            for (const jid of participants) {
+                const numero = jid.split('@')[0];
+                if (gConfig.fakes && !numero.startsWith(db.config_bot.ddi_permitido || '258')) {
+                    await botSocket.groupParticipantsUpdate(groupId, [jid], 'remove').catch(() => {});
+                    await botSocket.sendMessage(groupId, { text: `🌐 Número estrangeiro @${numero} removido (DDI).`, mentions: [jid] });
+                    continue;
                 }
-
-                // BOAS-VINDAS
                 if (gConfig.boasvindas) {
-                    const slotAtivo = gConfig.bv_ativo || 'bv1';
-                    const textoBV = gConfig[slotAtivo] || gConfig.bv1 || 'Seja bem-vindo(a) ao grupo! 🌊';
-                    try {
-                        await botSocket.sendMessage(groupId, {
-                            text: `@${numero} ${textoBV}`,
-                            mentions: [participantJid]
-                        });
-                    } catch (e) {
-                        console.error('[BOAS-VINDAS] Falha ao enviar:', e.message);
-                    }
+                    const slot = gConfig.bv_ativo || 'bv1';
+                    const texto = gConfig[slot] || 'Seja bem-vindo(a)! 🌊';
+                    await botSocket.sendMessage(groupId, { text: `@${numero} ${texto}`, mentions: [jid] });
                 }
             }
         } catch (e) {
@@ -430,14 +378,8 @@ async function iniciarBot() {
     });
 }
 
-// ═══════════════════════════════════════════════════
-// 🚀 INICIALIZAÇÃO DO BOT
-// ═══════════════════════════════════════════════════
 if (process.env.PAUSAR_WHATSAPP === 'true') {
-    statusConexao = "PAUSADO manualmente (PAUSAR_WHATSAPP=true)";
-    console.log('[SISTEMA] PAUSAR_WHATSAPP está ativo — o bot NÃO vai tentar se conectar ao WhatsApp.');
+    statusConexao = "PAUSADO manualmente";
 } else {
-    setTimeout(() => {
-        iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
-    }, 2000);
+    setTimeout(() => iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err)), 2000);
 }
