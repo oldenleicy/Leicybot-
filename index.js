@@ -108,30 +108,31 @@ function salvarDB(dadosNovos) {
     }
 }
 
-// ⚠️ MIGRAÇÃO: converte campos antigos para o novo padrão (slot1/slot2)
+// ⚠️ MIGRAÇÃO: garante que os campos de título estejam no formato titulo_1/titulo_2
 let migrado = false;
 Object.values(db.usuarios).forEach(u => {
-    // titulo_especial -> slot2
-    if (u.titulo_especial && !u.titulo_slot2) {
-        u.titulo_slot2 = u.titulo_especial;
+    // Se existir titulo_slot1, renomeia para titulo_1
+    if (u.titulo_slot1 && !u.titulo_1) {
+        u.titulo_1 = u.titulo_slot1;
+        delete u.titulo_slot1;
+        migrado = true;
+    }
+    // Se existir titulo_slot2, renomeia para titulo_2
+    if (u.titulo_slot2 && !u.titulo_2) {
+        u.titulo_2 = u.titulo_slot2;
+        delete u.titulo_slot2;
+        migrado = true;
+    }
+    // Remove titulo_especial se ainda existir (já deve ter sido convertido antes)
+    if (u.titulo_especial) {
+        if (!u.titulo_2) u.titulo_2 = u.titulo_especial;
         delete u.titulo_especial;
-        migrado = true;
-    }
-    // titulo_1 -> slot1
-    if (u.titulo_1 && !u.titulo_slot1) {
-        u.titulo_slot1 = u.titulo_1;
-        delete u.titulo_1;
-        migrado = true;
-    }
-    // Remove titulo_2 (não usado mais)
-    if (u.titulo_2) {
-        delete u.titulo_2;
         migrado = true;
     }
 });
 if (migrado) {
     salvarDB(db);
-    console.log('[SISTEMA] Migração de títulos antigos concluída.');
+    console.log('[SISTEMA] Migração de títulos para titulo_1/titulo_2 concluída.');
 }
 
 const MEU_NUMERO_WHATSAPP = '258840504242';
@@ -291,7 +292,7 @@ async function iniciarBot() {
                 const gConfig = db.grupos[from];
                 const agora = Date.now();
 
-                // 1. MUTE
+                // 1. MUTE TEMPORÁRIO
                 if (db.usuarios[sender].mutado_ate && db.usuarios[sender].mutado_ate > agora) {
                     await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
                     return;
@@ -315,7 +316,7 @@ async function iniciarBot() {
                     if (db.usuarios[sender].historico_mensagens.length > gConfig.antiflood.max) {
                         db.usuarios[sender].mutado_ate = agora + 5 * 60 * 1000;
                         salvarDB(db);
-                        await botSocket.sendMessage(from, { text: `🤫 @${sender.split('@')[0]} silenciado por 5 minutos (flood).`, mentions: [sender] }).catch(() => {});
+                        await botSocket.sendMessage(from, { text: `🤫 @${sender.split('@')[0]} foi silenciado por 5 minutos (flood).`, mentions: [sender] }).catch(() => {});
                         await botSocket.sendMessage(from, { delete: msg.key }).catch(() => {});
                         return;
                     }
