@@ -1,16 +1,19 @@
 // modulos/economia.js
 const criarUsuarioPadrao = require('./usuarioPadrao');
-const { obterAlvo } = require('./jidUtils');
+const { resolverIdentidade, obterAlvo } = require('./jidUtils');
+
+// Números vermelhos da roleta europeia padrão (0 é verde/casa, o resto é preto)
+const NUMEROS_VERMELHOS = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
 
 const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
     try {
         const from = msg.key.remoteJid;
-        let sender = msg.key.participant || msg.key.remoteJid;
-
-        // Normaliza JID multi-dispositivo
-        if (sender && sender.includes(':')) {
-            sender = sender.split(':')[0] + '@s.whatsapp.net';
-        }
+        // v2: usa o mesmo resolvedor de identidade do resto do bot (jidUtils).
+        // Antes esse arquivo tinha sua própria lógica de sender duplicada e
+        // SEM o tratamento de @lid — o que podia fragmentar o saldo de um
+        // mesmo usuário em 2 registros diferentes dependendo de qual módulo
+        // processasse a mensagem primeiro. Corrigido aqui.
+        const sender = resolverIdentidade(msg.key);
 
         if (!db.usuarios) db.usuarios = {};
         if (!db.usuarios[sender]) {
@@ -19,29 +22,22 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
         let u = db.usuarios[sender];
 
-        // Garantia de propriedades
+        // Garantia de propriedades de controle diário
         if (u.trabalhos_hoje === undefined) u.trabalhos_hoje = 0;
         if (u.mineracoes_hoje === undefined) u.mineracoes_hoje = 0;
         if (u.pescas_hoje === undefined) u.pescas_hoje = 0;
         if (u.raspadinhas_hoje === undefined) u.raspadinhas_hoje = 0;
-        if (u.sorte_grande_jogadas === undefined) u.sorte_grande_jogadas = 0;
-        if (!u.roubos_sofridos) u.roubos_sofridos = [];
-        if (!u.dividas_emprestadas) u.dividas_emprestadas = [];
-        if (!u.dividas_devidas) u.dividas_devidas = [];
 
-        // Reset diário dos limites
-        const hojeData = new Date().toLocaleDateString();
-        if (u.ultimo_mensagem_data !== hojeData) {
-            u.trabalhos_hoje = 0;
-            u.mineracoes_hoje = 0;
-            u.pescas_hoje = 0;
-            u.raspadinhas_hoje = 0;
-            u.ultimo_mensagem_data = hojeData;
+        // Expiração real do título comprado (v2 — antes era só um texto
+        // cosmético no !gold, nunca chegava a ser verificado em lugar nenhum).
+        if (u.data_expiracao && Date.now() >= u.data_expiracao) {
+            u.titulo_comprado = null;
+            u.data_expiracao = null;
             salvarDB(db);
         }
 
-        // Catálogo de títulos (mantido igual)
-        const catalogoTitulos = {
+        // Estrutura fixa de títulos com preços e raridades
+        const catálogoTítulos = {
             'luasuperior1': { nome: "🔴 Lua Superior 1", preco: 3000, raridade: "Lendario" },
             'pecadoganancia': { nome: "🔴 Pecado da Ganância", preco: 3000, raridade: "Lendario" },
             'reipiratas': { nome: "🔴 Rei dos Piratas", preco: 3000, raridade: "Lendario" },
@@ -67,38 +63,44 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
         };
 
         const obterRaridadePorNome = (nomeItem) => {
-            const encontrado = Object.values(catalogoTitulos).find(t => t.nome === nomeItem);
+            const encontrado = Object.values(catálogoTítulos).find(t => t.nome === nomeItem);
             return encontrado ? encontrado.raridade : null;
         };
 
+        // v2: só existe 1 slot comprado agora (titulo_comprado), não mais titulo_1/titulo_2
         const contarDonosRaridade = (raridade) => {
             let contagem = 0;
             Object.values(db.usuarios).forEach(user => {
-                if (user.titulo_slot1 && obterRaridadePorNome(user.titulo_slot1) === raridade) contagem++;
-                if (user.titulo_slot2 && obterRaridadePorNome(user.titulo_slot2) === raridade) contagem++;
+                if (user.titulo_comprado && obterRaridadePorNome(user.titulo_comprado) === raridade) contagem++;
             });
             return contagem;
         };
 
-        // Helper para exibir títulos formatados
-        const formatarTitulos = (usuario) => {
-            let txt = '';
-            if (usuario.titulo_slot1) {
-                const raridade = obterRaridadePorNome(usuario.titulo_slot1);
-                const emoji = raridade === 'Lendario' ? '🔴' : (raridade === 'Ouro' ? '🏅' : '⚪');
-                txt += `💧 TÍTULO ${raridade ? raridade.toUpperCase() : 'DESCONHECIDO'} ${emoji}\n${usuario.titulo_slot1}\n\n`;
+        const hojeData = new Date().toLocaleDateString();
+        if (u.ultimo_mensagem_data !== hojeData) {
+            u.trabalhos_hoje = 0;
+            u.mineracoes_hoje = 0;
+            u.pescas_hoje = 0;
+            u.raspadinhas_hoje = 0;
+            u.ultimo_mensagem_data = hojeData;
+            salvarDB(db);
+        }
+
+        // Sorte Grande (item da loja v2): em caso de derrota em roleta/slots/dados,
+        // se tiver ficha sobrando, dá 50% de chance de reverter pra vitória —
+        // consumindo 1 ficha no processo (só se ela chegar a ser usada).
+        const tentarSorteGrande = (jaGanhou) => {
+            if (jaGanhou) return { vitoria: true, usouFicha: false };
+            if ((u.sorte_grande_jogadas || 0) > 0) {
+                u.sorte_grande_jogadas -= 1;
+                return { vitoria: Math.random() < 0.5, usouFicha: true };
             }
-            if (usuario.titulo_slot2) {
-                txt += `💧 TÍTULO ESPECIAL 🪽\n${usuario.titulo_slot2}\n\n`;
-            }
-            if (!txt) txt = 'Nenhum título equipado.\n';
-            return txt;
+            return { vitoria: false, usouFicha: false };
         };
 
-        // ─── COMANDOS ───
         switch (comando) {
             case 'menugold': {
-                const menuGoldTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢𝗣 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 - 𝗘𝗖𝗢𝗡𝗢𝗠𝗜𝗔  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Sob a gerência do comandante Olden.\n\n ➔ *!gold* - Consulta saldo, banco, títulos e energias.\n ➔ *!trabalhar* - Executa tarefas seguras (Lim. 5/dia).\n ➔ *!minerar* - Tenta escavar na mina de risco (Lim. 5/dia).\n ➔ *!assaltar [@user]* - Tenta saquear os Golds em mãos de um alvo.\n ➔ *!roubar [@user]* - Tenta roubar o banco de alguém (mais arriscado).\n ➔ *!revidar* - Contra-ataca o último ladrão que te roubou (24h).\n ➔ *!pagar [@user] [quantia]* - Transfere dinheiro para um amigo.\n ➔ *!emprestar [@user] [valor]* - Empresta golds e registra a dívida.\n ➔ *!banco depositar/sacar [quantia]* - Guarda fundos com segurança.\n ➔ *!rankgold* - Placar dos 10 bilionários do grupo.\n ➔ *!loja* - Abre a vitrine de itens e títulos.\n ➔ *!comprar [nome_do_item]* - Adquire um privilégio.\n ➔ *!vendertitulo* - Remove seus títulos atuais para abrir vagas.\n ➔ *!apresentacao [on/off]* - Liga/Desliga anúncio automático.\n ➔ *!roleta [aposta] [cor/número]* - Aposta em vermelho/preto (2x) ou número (14x).\n ➔ *!slots [aposta]* - Caça-níqueis com 3 símbolos.\n ➔ *!apostar [aposta]* - Dobro ou nada contra a casa.\n ➔ *!dados [aposta]* - Disputa de dados contra o bot.\n ➔ *!pescar* - Pesca diária com prêmios variados.\n ➔ *!raspadinha* - Raspadinha instantânea.\n ➔ *!investir [valor]* - Investe golds para render juros.\n ➔ *!resgatar* - Resgata investimento + rendimento.\n ➔ *!usar [item]* - Ativa um item comprado (recarga, etc.).\n░▒▓█████████████████████████████████████▓▒░`;
+                const menuGoldTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  🪙  𝗧𝗢𝗣 𝗖𝗢𝗠𝗔𝗡𝗗𝗢𝗦 - 𝗘𝗖𝗢𝗡𝗢𝗠𝗜𝗔  🪙  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Sob a gerência do comandante Olden.\n\n ➔ *!gold* - Saldo, banco, títulos, dívidas e energias (responda alguém pra ver a dela).\n ➔ *!trabalhar* / *!minerar* / *!pescar* - Ganhos seguros (Lim. 5/dia cada).\n ➔ *!raspadinha* - Raspadinha rápida, prêmio na hora (Lim. 5/dia).\n ➔ *!roleta [aposta] [cor/nº]* - Aposte no vermelho/preto ou num número (0-36).\n ➔ *!slots [aposta]* - Caça-níqueis.\n ➔ *!apostar [aposta]* - Dobro ou nada contra a casa.\n ➔ *!dados [aposta]* - Role contra o bot.\n ➔ *!assaltar [@user]* - Saqueia os Golds em mãos de um alvo.\n ➔ *!roubar [@user]* - Mira o banco do alvo (mais arriscado).\n ➔ *!revidar* - Ataca de volta quem te roubou nas últimas 24h.\n ➔ *!pagar [@user] [valor]* - Transfere dinheiro.\n ➔ *!emprestar [@user] [valor]* - Empresta e registra a dívida.\n ➔ *!banco depositar/sacar [valor]* - Guarda ou retira do cofre.\n ➔ *!investir [valor]* - Trava um valor por 6h com bônus.\n ➔ *!resgatar* - Resgata um investimento pronto.\n ➔ *!rankgold* - Placar dos 10 bilionários do grupo.\n ➔ *!loja* / *!comprar [item]* - Itens e títulos.\n ➔ *!vendertitulo* - Libera sua vaga de título comprado.\n ➔ *!apresentacao [on/off]* - Liga/Desliga anúncio automático.\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: menuGoldTxt }, { quoted: msg });
                 break;
             }
@@ -106,40 +108,59 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             case 'gold':
             case 'saldo':
             case 'carteira': {
-                // Mecânica de resposta: se houver alvo (menção/resposta), mostra o perfil dele
-                const alvo = obterAlvo(msg) || sender;
-                if (!db.usuarios[alvo]) db.usuarios[alvo] = criarUsuarioPadrao();
-                const uAlvo = db.usuarios[alvo];
+                // v2: responder à mensagem de alguém mostra o !gold dessa pessoa
+                const alvoMarcado = obterAlvo(msg);
+                let alvoUser = sender;
+                if (alvoMarcado && alvoMarcado !== sender) {
+                    if (!db.usuarios[alvoMarcado]) db.usuarios[alvoMarcado] = criarUsuarioPadrao();
+                    alvoUser = alvoMarcado;
+                }
+                const uAlvo = db.usuarios[alvoUser];
+                if (uAlvo.trabalhos_hoje === undefined) uAlvo.trabalhos_hoje = 0;
+                if (uAlvo.mineracoes_hoje === undefined) uAlvo.mineracoes_hoje = 0;
+                if (uAlvo.pescas_hoje === undefined) uAlvo.pescas_hoje = 0;
+                if (uAlvo.raspadinhas_hoje === undefined) uAlvo.raspadinhas_hoje = 0;
 
-                // Limpa histórico de roubos antigos (>24h)
-                const agora = Date.now();
-                uAlvo.roubos_sofridos = uAlvo.roubos_sofridos.filter(r => agora - r.timestamp < 86400000);
+                let blocoTitulos = "";
+                if (uAlvo.titulo_comprado) {
+                    const raridadeAtual = obterRaridadePorNome(uAlvo.titulo_comprado);
+                    const emojiRaridade = { "Lendario": "🔴", "Ouro": "🏅", "Prata": "⚪" }[raridadeAtual] || "🎭";
+                    const nomeRaridade = { "Lendario": "LENDÁRIO", "Ouro": "DE OURO", "Prata": "DE PRATA" }[raridadeAtual] || "";
+                    blocoTitulos += ` 💧 TÍTULO ${nomeRaridade} ${emojiRaridade}\n ${uAlvo.titulo_comprado}\n\n`;
+                }
+                if (uAlvo.titulo_especial) {
+                    blocoTitulos += ` 💧 TÍTULO ESPECIAL 🪽\n ${uAlvo.titulo_especial}\n\n`;
+                }
+                if (!blocoTitulos) blocoTitulos = " 🎭 Nenhum título equipado.\n\n";
 
-                // Exibe dívidas
-                let dividasTxt = '';
-                if (uAlvo.dividas_emprestadas.length > 0) {
-                    dividasTxt += '📤 *Emprestado a:*\n';
-                    uAlvo.dividas_emprestadas.forEach(d => {
-                        dividasTxt += `  → @${d.para.split('@')[0]}: ${d.valor} 🪙\n`;
+                const roubosRecentes = (uAlvo.historico_roubos || []).filter(r => Date.now() - r.timestamp < 86400000);
+                let blocoRoubos = "";
+                if (roubosRecentes.length > 0) {
+                    blocoRoubos = ` 🚨 Roubado nas últimas 24h por:\n`;
+                    roubosRecentes.forEach(r => {
+                        const horasAtras = Math.floor((Date.now() - r.timestamp) / 3600000);
+                        blocoRoubos += `   • @${r.atacante.split('@')[0]} (${r.tipo === 'banco' ? 'banco' : 'carteira'}, ${r.sucesso ? 'sucesso' : 'falhou'}, há ${horasAtras}h)\n`;
                     });
-                }
-                if (uAlvo.dividas_devidas.length > 0) {
-                    dividasTxt += '📥 *Devendo a:*\n';
-                    uAlvo.dividas_devidas.forEach(d => {
-                        dividasTxt += `  → @${d.de.split('@')[0]}: ${d.valor} 🪙\n`;
-                    });
-                }
-                if (!dividasTxt) dividasTxt = 'Nenhuma pendência financeira.\n';
-
-                // Último ladrão
-                let ultimoRouboTxt = '';
-                const ultimoRoubo = uAlvo.roubos_sofridos[uAlvo.roubos_sofridos.length - 1];
-                if (ultimoRoubo) {
-                    ultimoRouboTxt = `⚠️ Último roubo: @${ultimoRoubo.de.split('@')[0]} levou ${ultimoRoubo.valor} 🪙 há ${Math.round((agora - ultimoRoubo.timestamp) / 3600000)}h\n`;
+                    blocoRoubos += `\n`;
                 }
 
-                const goldTxt = `╔═══════════════════════════════════════╗\n         💳  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  💳\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${uAlvo.id || alvo.split('@')[0]}\n 💳 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${uAlvo.golds} 🪙\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${uAlvo.banco} 🪙\n 🛡️ 𝗘𝘀𝗰𝘂𝗱ο: [${uAlvo.escudo ? 'ATIVO' : 'INATIVO'}]\n 🛡️ 𝗦𝗲𝗴𝘂𝗿𝗼 𝗣𝗮𝗿𝗰𝗶𝗮𝗹: [${uAlvo.seguro_parcial ? 'ATIVO' : 'INATIVO'}]\n 🔒 𝗖𝗼𝗳𝗿𝗲 𝗕𝗹𝗶𝗻𝗱𝗮𝗱𝗼: [${uAlvo.cofre_blindado_ate > agora ? 'ATIVO' : 'INATIVO'}]\n 🎣 𝗜𝘀𝗰𝗮 𝗘𝘀𝗽𝗲𝗰𝗶𝗮𝗹: [${uAlvo.isca_especial_ate > agora ? 'ATIVO' : 'INATIVO'}]\n 🍀 𝗦𝗼𝗿𝘁𝗲 𝗚𝗿𝗮𝗻𝗱𝗲: ${uAlvo.sorte_grande_jogadas} jogadas restantes\n\n${formatarTitulos(uAlvo)}─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${uAlvo.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${uAlvo.mineracoes_hoje}/5)\n 🎣 Pescas hoje: (${uAlvo.pescas_hoje}/5)\n 🎫 Raspadinhas hoje: (${uAlvo.raspadinhas_hoje}/3)\n─────────────────────────────────────────\n${dividasTxt}\n${ultimoRouboTxt}╚═══════════════════════════════════════╝`;
-                await sock.sendMessage(from, { text: goldTxt, mentions: [alvo, ...(uAlvo.dividas_emprestadas.map(d => d.para)), ...(uAlvo.dividas_devidas.map(d => d.de)), ...(ultimoRoubo ? [ultimoRoubo.de] : [])] }, { quoted: msg });
+                let blocoEmprestimos = "";
+                if ((uAlvo.emprestimos_feitos || []).length > 0) {
+                    blocoEmprestimos += ` 💰 Devem pra ${alvoUser === sender ? 'você' : 'ela(e)'}:\n`;
+                    uAlvo.emprestimos_feitos.forEach(e => { blocoEmprestimos += `   • @${e.devedor.split('@')[0]} — ${e.valor} 🪙\n`; });
+                }
+                if ((uAlvo.emprestimos_recebidos || []).length > 0) {
+                    blocoEmprestimos += ` 📤 ${alvoUser === sender ? 'Você deve' : 'Ela(e) deve'}:\n`;
+                    uAlvo.emprestimos_recebidos.forEach(e => { blocoEmprestimos += `   • @${e.credor.split('@')[0]} — ${e.valor} 🪙\n`; });
+                }
+
+                const mentionsGold = [alvoUser,
+                    ...roubosRecentes.map(r => r.atacante),
+                    ...(uAlvo.emprestimos_feitos || []).map(e => e.devedor),
+                    ...(uAlvo.emprestimos_recebidos || []).map(e => e.credor)];
+
+                const goldTxt = `╔═══════════════════════════════════════╗\n         🪙  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  🪙\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${alvoUser.split('@')[0]}\n 🪙 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${uAlvo.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${uAlvo.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱ο: [${uAlvo.escudo ? 'ATIVO' : 'INATIVO'}]\n 🩹 𝗦𝗲𝗴𝘂𝗿𝗼 𝗣𝗮𝗿𝗰𝗶𝗮𝗹: [${uAlvo.seguro_parcial ? 'ATIVO' : 'INATIVO'}]\n 🔒 𝗖𝗼𝗳𝗿𝗲 𝗕𝗹𝗶𝗻𝗱𝗮𝗱𝗼: [${uAlvo.cofre_blindado ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${uAlvo.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n${blocoTitulos}─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${uAlvo.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${uAlvo.mineracoes_hoje}/5)\n 🎣 Pescas hoje: (${uAlvo.pescas_hoje}/5)\n 🎫 Raspadinhas hoje: (${uAlvo.raspadinhas_hoje}/5)\n─────────────────────────────────────────\n${blocoRoubos}${blocoEmprestimos}╚═══════════════════════════════════════╝`;
+                await sock.sendMessage(from, { text: goldTxt, mentions: [...new Set(mentionsGold)] }, { quoted: msg });
                 break;
             }
 
@@ -149,7 +170,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 u.golds += ganhoTrab;
                 u.trabalhos_hoje += 1;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `🔨 Você trabalhou duro limpando a praia virtual e faturou *${ganhoTrab} 🪙* por ordem de Olden! 🌊` }, { quoted: msg });
+                await sock.sendMessage(from, { text: `🔨 Você trabalhou duro limpando a praia virtual e faturou *${ganhoTrab} Golds* por ordem de Olden! 🌊` }, { quoted: msg });
                 break;
             }
 
@@ -162,161 +183,293 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     const ganhoMin = Math.floor(Math.random() * 101) + 50;
                     u.golds += ganhoMin;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `⛏️ *💥 MINERAÇÃO DE SUCESSO:* Você encontrou cristais aquáticos na caverna e garantiu *${ganhoMin} 🪙*! 🌊` }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `⛏️ *💥 MINERAÇÃO DE SUCESSO:* Você encontrou cristais aquáticos na caverna e garantiu *${ganhoMin} Golds*! 🌊` }, { quoted: msg });
                 } else {
                     const perdaMin = Math.floor(Math.random() * 41) + 20;
                     u.golds = Math.max(0, u.golds - perdaMin);
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `⛏️ *⚠️ DESABAMENTO:* A caverna estremeceu e você perdeu *${perdaMin} 🪙* em equipamentos quebrados! 💧` }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `⛏️ *⚠️ DESABAMENTO:* A caverna estremeceu e você perdeu *${perdaMin} Golds* em equipamentos quebrados! 💧` }, { quoted: msg });
+                }
+                break;
+            }
+
+            case 'pescar': {
+                if (u.pescas_hoje >= 5) return sock.sendMessage(from, { text: "🎣 Você já pescou o limite de 5 vezes hoje. As águas precisam descansar! 🌊" }, { quoted: msg });
+                u.pescas_hoje += 1;
+
+                let ganhoPesca = Math.floor(Math.random() * 51) + 20; // 20-70
+                let msgExtraPesca = "";
+                if (Math.random() < 0.1) {
+                    ganhoPesca = Math.floor(Math.random() * 201) + 200; // 200-400
+                    msgExtraPesca = "\n\n🏆 *TESOURO RARO ENCONTRADO!* Sorte rara nas profundezas!";
+                }
+                if (u.isca_especial_ate && Date.now() < u.isca_especial_ate) {
+                    ganhoPesca = Math.floor(ganhoPesca * 1.5);
+                    msgExtraPesca += "\n🎣 (Bônus de Isca Especial aplicado!)";
+                }
+
+                u.golds += ganhoPesca;
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `🎣 Você pescou e faturou *${ganhoPesca} Golds*!${msgExtraPesca} 🌊` }, { quoted: msg });
+                break;
+            }
+
+            case 'raspadinha': {
+                if (u.raspadinhas_hoje >= 5) return sock.sendMessage(from, { text: "🎫 Limite de 5 raspadinhas hoje atingido. Volte amanhã! 💧" }, { quoted: msg });
+                if (u.golds < 20) return sock.sendMessage(from, { text: "❌ A raspadinha custa 20 Golds e você não tem saldo em mãos suficiente." }, { quoted: msg });
+
+                u.golds -= 20;
+                u.raspadinhas_hoje += 1;
+
+                const sorteRasp = Math.random();
+                let premioRasp = 0;
+                let textoRasp = "";
+                if (sorteRasp < 0.40) {
+                    textoRasp = "💨 Não foi dessa vez, a raspadinha veio em branco!";
+                } else if (sorteRasp < 0.80) {
+                    premioRasp = Math.floor(Math.random() * 31) + 10; // 10-40
+                    textoRasp = `🎉 Prêmio pequeno: *${premioRasp} Golds*!`;
+                } else if (sorteRasp < 0.95) {
+                    premioRasp = Math.floor(Math.random() * 101) + 50; // 50-150
+                    textoRasp = `🎊 Prêmio médio: *${premioRasp} Golds*!`;
+                } else {
+                    premioRasp = Math.floor(Math.random() * 301) + 300; // 300-600
+                    textoRasp = `🏆 *PRÊMIO GRANDE:* ${premioRasp} Golds!!`;
+                }
+                u.golds += premioRasp;
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `🎫 *RASPADINHA:* ${textoRasp}` }, { quoted: msg });
+                break;
+            }
+
+            case 'roleta': {
+                const apostaRoleta = parseInt(args[0]);
+                const escolha = (args[1] || "").toLowerCase();
+                if (!apostaRoleta || apostaRoleta <= 0 || !escolha) {
+                    return sock.sendMessage(from, { text: "❌ Uso: *!roleta [aposta] [vermelho/preto/número]* Ex: `!roleta 50 vermelho` ou `!roleta 50 17`" }, { quoted: msg });
+                }
+                if (u.golds < apostaRoleta) return sock.sendMessage(from, { text: "❌ Golds em mãos insuficientes para essa aposta!" }, { quoted: msg });
+
+                const numeroApostado = parseInt(escolha);
+                if (isNaN(numeroApostado) && escolha !== 'vermelho' && escolha !== 'preto') {
+                    return sock.sendMessage(from, { text: "❌ Escolha inválida! Use *vermelho*, *preto* ou um número de 0 a 36." }, { quoted: msg });
+                }
+
+                u.golds -= apostaRoleta;
+                const numeroSorteado = Math.floor(Math.random() * 37); // 0-36
+                const corSorteada = numeroSorteado === 0 ? null : (NUMEROS_VERMELHOS.includes(numeroSorteado) ? 'vermelho' : 'preto');
+
+                let ganhou = false;
+                let multiplicador = 0;
+                if (!isNaN(numeroApostado)) {
+                    ganhou = numeroApostado === numeroSorteado;
+                    multiplicador = 14;
+                } else {
+                    ganhou = escolha === corSorteada;
+                    multiplicador = 2;
+                }
+
+                const { vitoria: ganhouFinal, usouFicha } = tentarSorteGrande(ganhou);
+                const textoSorte = usouFicha ? (ganhouFinal ? "\n🍀 *Sorte Grande* virou a mesa a seu favor!" : "\n🍀 Sorte Grande tentou, mas não foi dessa vez.") : "";
+
+                if (ganhouFinal) {
+                    const premioRoleta = apostaRoleta * multiplicador;
+                    u.golds += premioRoleta;
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎡 *ROLETA:* Caiu no *${numeroSorteado}* (${corSorteada || 'verde/casa'})! Você ganhou *${premioRoleta} Golds*!${textoSorte}` }, { quoted: msg });
+                } else {
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎡 *ROLETA:* Caiu no *${numeroSorteado}* (${corSorteada || 'verde/casa'})! Você perdeu a aposta de *${apostaRoleta} Golds*.${textoSorte}` }, { quoted: msg });
+                }
+                break;
+            }
+
+            case 'slots': {
+                const apostaSlots = parseInt(args[0]);
+                if (!apostaSlots || apostaSlots <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!slots [aposta]*" }, { quoted: msg });
+                if (u.golds < apostaSlots) return sock.sendMessage(from, { text: "❌ Golds em mãos insuficientes para essa aposta!" }, { quoted: msg });
+
+                u.golds -= apostaSlots;
+                const simbolosSlots = ['🍒', '🍋', '🔔', '💎', '7️⃣'];
+                const resultadoSlots = [0, 0, 0].map(() => simbolosSlots[Math.floor(Math.random() * simbolosSlots.length)]);
+                const linhaSlots = resultadoSlots.join(' | ');
+
+                let ganhouSlots = false;
+                let multiplicadorSlots = 0;
+                if (resultadoSlots[0] === resultadoSlots[1] && resultadoSlots[1] === resultadoSlots[2]) {
+                    ganhouSlots = true;
+                    multiplicadorSlots = resultadoSlots[0] === '7️⃣' ? 20 : 8;
+                } else if (resultadoSlots[0] === resultadoSlots[1] || resultadoSlots[1] === resultadoSlots[2] || resultadoSlots[0] === resultadoSlots[2]) {
+                    ganhouSlots = true;
+                    multiplicadorSlots = 2;
+                }
+
+                const { vitoria: ganhouFinalSlots, usouFicha: usouFichaSlots } = tentarSorteGrande(ganhouSlots);
+                if (!ganhouSlots && ganhouFinalSlots) multiplicadorSlots = 2; // prêmio de consolação quando a Sorte Grande reverte
+                const textoSorteSlots = usouFichaSlots ? (ganhouFinalSlots ? "\n🍀 *Sorte Grande* salvou sua rodada!" : "\n🍀 Sorte Grande tentou, mas não foi dessa vez.") : "";
+
+                if (ganhouFinalSlots) {
+                    const premioSlots = apostaSlots * multiplicadorSlots;
+                    u.golds += premioSlots;
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎰 [ ${linhaSlots} ]\n🎉 Você ganhou *${premioSlots} Golds*!${textoSorteSlots}` }, { quoted: msg });
+                } else {
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎰 [ ${linhaSlots} ]\n💨 Não foi dessa vez, perdeu *${apostaSlots} Golds*.${textoSorteSlots}` }, { quoted: msg });
+                }
+                break;
+            }
+
+            case 'apostar': {
+                const apostaDobro = parseInt(args[0]);
+                if (!apostaDobro || apostaDobro <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!apostar [quantia]* — Dobro ou nada contra a casa!" }, { quoted: msg });
+                if (u.golds < apostaDobro) return sock.sendMessage(from, { text: "❌ Golds em mãos insuficientes para essa aposta!" }, { quoted: msg });
+
+                u.golds -= apostaDobro;
+                const ganhouAposta = Math.random() < 0.45;
+                if (ganhouAposta) {
+                    u.golds += apostaDobro * 2;
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎲 *DOBRO OU NADA:* Sorte grande! Você dobrou e faturou *${apostaDobro * 2} Golds*! 🌊` }, { quoted: msg });
+                } else {
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎲 *DOBRO OU NADA:* A casa levou dessa vez. Você perdeu *${apostaDobro} Golds*. 💧` }, { quoted: msg });
+                }
+                break;
+            }
+
+            case 'dados': {
+                const apostaDados = parseInt(args[0]);
+                if (!apostaDados || apostaDados <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!dados [aposta]* — Role contra o bot, quem tirar mais alto leva!" }, { quoted: msg });
+                if (u.golds < apostaDados) return sock.sendMessage(from, { text: "❌ Golds em mãos insuficientes para essa aposta!" }, { quoted: msg });
+
+                u.golds -= apostaDados;
+                const dadoJogador = Math.floor(Math.random() * 6) + 1;
+                const dadoBot = Math.floor(Math.random() * 6) + 1;
+
+                if (dadoJogador === dadoBot) {
+                    u.golds += apostaDados; // empate devolve a aposta
+                    salvarDB(db);
+                    return sock.sendMessage(from, { text: `🎲 Empate! Você e o bot tiraram *${dadoJogador}*. Sua aposta foi devolvida.` }, { quoted: msg });
+                }
+
+                const ganhouDados = dadoJogador > dadoBot;
+                const { vitoria: ganhouFinalDados, usouFicha: usouFichaDados } = tentarSorteGrande(ganhouDados);
+                const textoSorteDados = usouFichaDados ? (ganhouFinalDados ? "\n🍀 *Sorte Grande* reverteu o resultado a seu favor!" : "\n🍀 Sorte Grande tentou, mas não foi dessa vez.") : "";
+
+                if (ganhouFinalDados) {
+                    u.golds += apostaDados * 2;
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎲 Você tirou *${dadoJogador}* e o bot tirou *${dadoBot}*. Vitória! Ganhou *${apostaDados * 2} Golds*!${textoSorteDados}` }, { quoted: msg });
+                } else {
+                    salvarDB(db);
+                    await sock.sendMessage(from, { text: `🎲 Você tirou *${dadoJogador}* e o bot tirou *${dadoBot}*. Você perdeu *${apostaDados} Golds*.${textoSorteDados}` }, { quoted: msg });
                 }
                 break;
             }
 
             case 'assaltar': {
-                let alvo = obterAlvo(msg);
-                if (!alvo) return sock.sendMessage(from, { text: "❌ Mencione ou responda a quem você deseja assaltar! Ex: `!assaltar @membro`" }, { quoted: msg });
-                if (alvo === sender) return sock.sendMessage(from, { text: "🤔 Você está tentando se assaltar? Deixe de macaquice!" }, { quoted: msg });
+                const alvoAssalto = obterAlvo(msg);
+                if (!alvoAssalto) return sock.sendMessage(from, { text: "❌ Marque ou responda a mensagem de quem você deseja assaltar! Ex: `!assaltar @membro`" }, { quoted: msg });
+                if (alvoAssalto === sender) return sock.sendMessage(from, { text: "🤔 Você está tentando se assaltar? Deixe de macaquice!" }, { quoted: msg });
 
-                if (!db.usuarios[alvo]) db.usuarios[alvo] = criarUsuarioPadrao();
-                let vitima = db.usuarios[alvo];
+                if (!db.usuarios[alvoAssalto]) db.usuarios[alvoAssalto] = criarUsuarioPadrao();
+                let vitima = db.usuarios[alvoAssalto];
+                vitima.historico_roubos = vitima.historico_roubos || [];
 
                 if ((vitima.golds || 0) < 50) return sock.sendMessage(from, { text: "💧 Esse membro está muito pobre, não vale a pena assaltá-lo. O crime não compensa tanto assim!" }, { quoted: msg });
 
-                // Verifica Escudo primeiro
                 if (vitima.escudo) {
                     vitima.escudo = false;
                     u.golds = Math.max(0, u.golds - 300);
+                    vitima.historico_roubos.push({ atacante: sender, tipo: 'carteira', sucesso: false, timestamp: Date.now() });
                     salvarDB(db);
-                    return sock.sendMessage(from, { text: `🛡️ *💥 ESCUDO ATIVADO:* O escudo antirroubo de @${alvo.split('@')[0]} quebrou o seu ataque! Você foi pego pelas patrulhas de Olden e multado em *300 🪙*.`, mentions: [alvo] }, { quoted: msg });
+                    return sock.sendMessage(from, { text: `🛡️ *💥 ESCUDO ATIVADO:* O escudo antirroubo de @${alvoAssalto.split('@')[0]} quebrou o seu ataque! Você foi pego pelas patrulhas de Olden e multado em *300 Golds*.`, mentions: [alvoAssalto] }, { quoted: msg });
                 }
 
-                let valorRoubado = Math.floor((vitima.golds || 0) * 0.3);
-                // Seguro Parcial reduz pela metade
-                if (vitima.seguro_parcial) {
-                    valorRoubado = Math.floor(valorRoubado / 2);
-                    vitima.seguro_parcial = false; // quebra após uso
-                }
-
-                const chance = Math.random();
-                if (chance > 0.5) {
-                    vitima.golds -= valorRoubado;
-                    u.golds += valorRoubado;
-                    // Registra roubo no histórico da vítima
-                    vitima.roubos_sofridos.push({ de: sender, valor: valorRoubado, timestamp: Date.now() });
+                if (Math.random() > 0.5) {
+                    let roubado = Math.floor((vitima.golds || 0) * 0.3);
+                    const reduziuSeguro = !!vitima.seguro_parcial;
+                    if (reduziuSeguro) roubado = Math.floor(roubado / 2);
+                    vitima.golds -= roubado;
+                    u.golds += roubado;
+                    vitima.historico_roubos.push({ atacante: sender, tipo: 'carteira', sucesso: true, timestamp: Date.now() });
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🏴‍☠️ *ASSALTO BEM SUCEDIDO:* Você sorrateiramente surrupiou *${valorRoubado} 🪙* da carteira de @${alvo.split('@')[0]}! 🌊`, mentions: [alvo] }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🏴‍☠️ *ASSALTO BEM SUCEDIDO:* Você sorrateiramente surrupiou *${roubado} Golds* da carteira de @${alvoAssalto.split('@')[0]}!${reduziuSeguro ? ' (Seguro Parcial dela reduziu o valor pela metade)' : ''} 🌊`, mentions: [alvoAssalto] }, { quoted: msg });
                 } else {
                     const perdaAssalto = Math.floor(u.golds * 0.15);
                     u.golds = Math.max(0, u.golds - perdaAssalto);
+                    vitima.historico_roubos.push({ atacante: sender, tipo: 'carteira', sucesso: false, timestamp: Date.now() });
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🚨 *ASSALTO FALHOU:* Você tropeçou em uma onda e deixou cair *${perdaAssalto} 🪙* enquanto tentava fugir! 💧` }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🚨 *ASSALTO FALHOU:* Você tropeçou em uma onda e deixou cair *${perdaAssalto} Golds* enquanto tentava fugir! 💧` }, { quoted: msg });
                 }
                 break;
             }
 
             case 'roubar': {
-                let alvo = obterAlvo(msg);
-                if (!alvo) return sock.sendMessage(from, { text: "❌ Mencione ou responda a quem você deseja roubar o banco! Ex: `!roubar @membro`" }, { quoted: msg });
-                if (alvo === sender) return sock.sendMessage(from, { text: "🤔 Roubar a si mesmo? Isso não faz sentido." }, { quoted: msg });
+                const alvoRoubar = obterAlvo(msg);
+                if (!alvoRoubar) return sock.sendMessage(from, { text: "❌ Marque ou responda a mensagem de quem você deseja roubar o banco! Ex: `!roubar @membro`" }, { quoted: msg });
+                if (alvoRoubar === sender) return sock.sendMessage(from, { text: "🤔 Você não pode roubar o próprio banco!" }, { quoted: msg });
 
-                if (!db.usuarios[alvo]) db.usuarios[alvo] = criarUsuarioPadrao();
-                let vitima = db.usuarios[alvo];
+                if (!db.usuarios[alvoRoubar]) db.usuarios[alvoRoubar] = criarUsuarioPadrao();
+                let vitimaBanco = db.usuarios[alvoRoubar];
+                vitimaBanco.historico_roubos = vitimaBanco.historico_roubos || [];
 
-                if ((vitima.banco || 0) < 100) return sock.sendMessage(from, { text: "💧 O banco desse membro está muito vazio para valer o risco." }, { quoted: msg });
+                if ((vitimaBanco.banco || 0) < 100) return sock.sendMessage(from, { text: "💧 Esse membro não tem golds suficientes guardados no banco pra valer o risco!" }, { quoted: msg });
 
-                // Chance base reduzida por Cofre Blindado
-                let chanceRoubo = 0.35;
-                if (vitima.cofre_blindado_ate && vitima.cofre_blindado_ate > Date.now()) {
-                    chanceRoubo = 0.15;
-                }
+                let chanceSucesso = 0.35;
+                if (vitimaBanco.cofre_blindado) chanceSucesso -= 0.15;
 
-                if (Math.random() > chanceRoubo) {
-                    const roubado = Math.floor((vitima.banco || 0) * 0.25);
-                    vitima.banco -= roubado;
-                    u.golds += roubado;
-                    vitima.roubos_sofridos.push({ de: sender, valor: roubado, timestamp: Date.now() });
+                if (Math.random() < chanceSucesso) {
+                    const roubadoBanco = Math.floor(vitimaBanco.banco * 0.15);
+                    vitimaBanco.banco -= roubadoBanco;
+                    u.golds += roubadoBanco;
+                    vitimaBanco.historico_roubos.push({ atacante: sender, tipo: 'banco', sucesso: true, timestamp: Date.now() });
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🔓 *BANCO ROUBADO:* Você invadiu o cofre de @${alvo.split('@')[0]} e levou *${roubado} 🪙*!`, mentions: [alvo] }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🏦🏴‍☠️ *ASSALTO AO BANCO:* Você driblou a segurança e sacou *${roubadoBanco} Golds* do banco de @${alvoRoubar.split('@')[0]}! Operação de alto risco compensou! 🌊`, mentions: [alvoRoubar] }, { quoted: msg });
                 } else {
-                    const multa = Math.floor(u.golds * 0.20) + 100;
-                    u.golds = Math.max(0, u.golds - multa);
+                    const perdaRoubar = Math.floor(u.golds * 0.25);
+                    u.golds = Math.max(0, u.golds - perdaRoubar);
+                    vitimaBanco.historico_roubos.push({ atacante: sender, tipo: 'banco', sucesso: false, timestamp: Date.now() });
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🚔 *ROUBO FALHOU:* O alarme do banco disparou e você foi multado em *${multa} 🪙*!` }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🚨 *ALARME DISPARADO:* A segurança do banco te pegou! Você pagou uma fiança de *${perdaRoubar} Golds* e fugiu de mãos vazias.${vitimaBanco.cofre_blindado ? ' (Cofre Blindado dela dificultou ainda mais)' : ''} 💧` }, { quoted: msg });
                 }
                 break;
             }
 
             case 'revidar': {
-                const ultimo = u.roubos_sofridos[u.roubos_sofridos.length - 1];
-                if (!ultimo || Date.now() - ultimo.timestamp > 86400000) {
-                    return sock.sendMessage(from, { text: "❌ Ninguém te roubou nas últimas 24h para você revidar." }, { quoted: msg });
+                u.historico_roubos = u.historico_roubos || [];
+                const roubosValidos = u.historico_roubos.filter(r => Date.now() - r.timestamp < 86400000);
+                if (roubosValidos.length === 0) {
+                    return sock.sendMessage(from, { text: "❌ Você não foi roubado nas últimas 24h, não tem contra quem revidar!" }, { quoted: msg });
                 }
-                const ladrao = ultimo.de;
-                if (!db.usuarios[ladrao]) db.usuarios[ladrao] = criarUsuarioPadrao();
-                const chanceRevide = 0.45;
-                if (Math.random() < chanceRevide) {
-                    const recuperado = Math.floor(ultimo.valor * 0.8);
-                    db.usuarios[ladrao].golds = Math.max(0, (db.usuarios[ladrao].golds || 0) - recuperado);
-                    u.golds += recuperado;
+                roubosValidos.sort((a, b) => b.timestamp - a.timestamp);
+                const ultimoAtaque = roubosValidos[0];
+                const alvoRevidar = ultimoAtaque.atacante;
+
+                const indiceOriginal = u.historico_roubos.indexOf(ultimoAtaque);
+                if (indiceOriginal !== -1) u.historico_roubos.splice(indiceOriginal, 1);
+
+                if (!db.usuarios[alvoRevidar]) db.usuarios[alvoRevidar] = criarUsuarioPadrao();
+                let vitimaRevidar = db.usuarios[alvoRevidar];
+
+                if ((vitimaRevidar.golds || 0) < 30) {
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `⚔️ *REVIDE BEM-SUCEDIDO:* Você recuperou *${recuperado} 🪙* do ladrão @${ladrao.split('@')[0]}!`, mentions: [ladrao] }, { quoted: msg });
-                } else {
-                    const perdaRevide = Math.floor(u.golds * 0.1);
-                    u.golds = Math.max(0, u.golds - perdaRevide);
-                    salvarDB(db);
-                    await sock.sendMessage(from, { text: `💢 *REVIDE FALHOU:* Você tentou se vingar mas acabou perdendo *${perdaRevide} 🪙* na tentativa.` }, { quoted: msg });
+                    return sock.sendMessage(from, { text: `💧 @${alvoRevidar.split('@')[0]} está sem golds suficientes em mãos pra valer a pena revidar agora.`, mentions: [alvoRevidar] }, { quoted: msg });
                 }
-                break;
-            }
 
-            case 'emprestar': {
-                const recebedor = obterAlvo(msg);
-                const valor = parseInt(args[1] || args[0]);
-                if (!recebedor || isNaN(valor) || valor <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!emprestar @membro [valor]*" }, { quoted: msg });
-                if (recebedor === sender) return sock.sendMessage(from, { text: "❌ Você não pode emprestar para você mesmo." }, { quoted: msg });
-                if (u.golds < valor) return sock.sendMessage(from, { text: "❌ Você não tem golds suficientes para emprestar." }, { quoted: msg });
-
-                if (!db.usuarios[recebedor]) db.usuarios[recebedor] = criarUsuarioPadrao();
-                u.golds -= valor;
-                db.usuarios[recebedor].golds = (db.usuarios[recebedor].golds || 0) + valor;
-
-                // Registra dívida
-                u.dividas_emprestadas.push({ para: recebedor, valor, timestamp: Date.now() });
-                db.usuarios[recebedor].dividas_devidas.push({ de: sender, valor, timestamp: Date.now() });
-
-                salvarDB(db);
-                await sock.sendMessage(from, { text: `🤝 *EMPRÉSTIMO:* Você emprestou *${valor} 🪙* para @${recebedor.split('@')[0]}. A dívida foi registrada.`, mentions: [recebedor] }, { quoted: msg });
-                break;
-            }
-
-            case 'pagar': {
-                let recebedor = obterAlvo(msg);
-                const valorPg = parseInt(args[1] || args[0]);
-                if (!recebedor || isNaN(valorPg) || valorPg <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!pagar @membro [quantia]*" }, { quoted: msg });
-                if (recebedor === sender) return sock.sendMessage(from, { text: "❌ Você não pode transferir para você mesmo!" }, { quoted: msg });
-                if (u.golds < valorPg) return sock.sendMessage(from, { text: "❌ Saldo insuficiente." }, { quoted: msg });
-
-                if (!db.usuarios[recebedor]) db.usuarios[recebedor] = criarUsuarioPadrao();
-                u.golds -= valorPg;
-                db.usuarios[recebedor].golds = (db.usuarios[recebedor].golds || 0) + valorPg;
-
-                // Se houver dívida do pagador para o recebedor, abate
-                const divida = u.dividas_devidas.find(d => d.de === recebedor);
-                if (divida) {
-                    const abatido = Math.min(valorPg, divida.valor);
-                    divida.valor -= abatido;
-                    if (divida.valor <= 0) {
-                        u.dividas_devidas = u.dividas_devidas.filter(d => d !== divida);
-                        // remove também da lista de quem emprestou
-                        if (db.usuarios[recebedor].dividas_emprestadas) {
-                            db.usuarios[recebedor].dividas_emprestadas = db.usuarios[recebedor].dividas_emprestadas.filter(d => !(d.para === sender && d.valor === divida.valor + abatido));
-                        }
-                    }
+                if (Math.random() < 0.6) {
+                    let roubadoRevidar = Math.floor(vitimaRevidar.golds * 0.3);
+                    if (vitimaRevidar.seguro_parcial) roubadoRevidar = Math.floor(roubadoRevidar / 2);
+                    vitimaRevidar.golds -= roubadoRevidar;
+                    u.golds += roubadoRevidar;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `💸 *PAGAMENTO:* Você pagou ${valorPg} 🪙 para @${recebedor.split('@')[0]} e abateu ${abatido} 🪙 da sua dívida.`, mentions: [recebedor] }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `⚔️ *REVIDE CERTEIRO:* Você se vingou de @${alvoRevidar.split('@')[0]} e recuperou *${roubadoRevidar} Golds*! 🌊`, mentions: [alvoRevidar] }, { quoted: msg });
                 } else {
+                    const perdaRevidar = Math.floor(u.golds * 0.15);
+                    u.golds = Math.max(0, u.golds - perdaRevidar);
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `💸 *TRANSFERÊNCIA:* Você enviou *${valorPg} 🪙* para @${recebedor.split('@')[0]}!`, mentions: [recebedor] }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🚨 *REVIDE FALHOU:* Você tentou se vingar de @${alvoRevidar.split('@')[0]} mas se estrepou, perdendo *${perdaRevidar} Golds*. 💧`, mentions: [alvoRevidar] }, { quoted: msg });
                 }
                 break;
             }
@@ -324,39 +477,111 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             case 'banco': {
                 const acao = args[0];
                 const valor = parseInt(args[1]);
-                if (!acao || isNaN(valor) || valor <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!banco depositar [quantia]* ou *!banco sacar [quantia]*" }, { quoted: msg });
+                if (!acao || isNaN(valor) || valor <= 0) return sock.sendMessage(from, { text: "❌ Uso correto: *!banco depositar [quantia]* ou *!banco sacar [quantia]*" }, { quoted: msg });
 
                 if (acao === 'depositar') {
-                    if (u.golds < valor) return sock.sendMessage(from, { text: "❌ Saldo insuficiente em mãos." }, { quoted: msg });
+                    if (u.golds < valor) return sock.sendMessage(from, { text: "❌ Saldo insuficiente em mãos para efetuar o depósito!" }, { quoted: msg });
                     u.golds -= valor;
                     u.banco = (u.banco || 0) + valor;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🏦 *DEPÓSITO:* Guardados *${valor} 🪙* no cofre forte do Leicybot.` }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🏦 *DEPÓSITO:* Guardados *${valor} Golds* no cofre forte do Leicybot-. Protegido de assaltos! 🌊` }, { quoted: msg });
                 } else if (acao === 'sacar') {
-                    if ((u.banco || 0) < valor) return sock.sendMessage(from, { text: "❌ Saldo insuficiente no banco." }, { quoted: msg });
+                    if ((u.banco || 0) < valor) return sock.sendMessage(from, { text: "❌ Você não tem toda essa quantia guardada no banco!" }, { quoted: msg });
                     u.banco -= valor;
                     u.golds += valor;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🏦 *SAQUE:* Retirados *${valor} 🪙* do banco.` }, { quoted: msg });
+                    await sock.sendMessage(from, { text: `🏦 *SAQUE:* Retirados *${valor} Golds* para a sua carteira em mãos. 💧` }, { quoted: msg });
                 }
                 break;
             }
 
+            case 'pagar': {
+                const recebedor = obterAlvo(msg);
+                const valorPg = parseInt(args[1] || args[0]);
+                if (!recebedor || isNaN(valorPg) || valorPg <= 0) return sock.sendMessage(from, { text: "❌ Uso correto: *!pagar [@membro ou responda] [quantia]*" }, { quoted: msg });
+                if (recebedor === sender) return sock.sendMessage(from, { text: "❌ Você não pode transferir dinheiro para você mesmo!" }, { quoted: msg });
+                if (u.golds < valorPg) return sock.sendMessage(from, { text: "❌ Você não tem Golds em mãos suficientes para transferir!" }, { quoted: msg });
+
+                if (!db.usuarios[recebedor]) db.usuarios[recebedor] = criarUsuarioPadrao();
+                u.golds -= valorPg;
+                db.usuarios[recebedor].golds = (db.usuarios[recebedor].golds || 0) + valorPg;
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `💸 *TRANSFERÊNCIA:* Você enviou *${valorPg} Golds* diretamente para @${recebedor.split('@')[0]} de forma segura!`, mentions: [recebedor] }, { quoted: msg });
+                break;
+            }
+
+            case 'emprestar': {
+                const devedorAlvo = obterAlvo(msg);
+                const valorEmp = parseInt(args[1] || args[0]);
+                if (!devedorAlvo || isNaN(valorEmp) || valorEmp <= 0) return sock.sendMessage(from, { text: "❌ Uso correto: *!emprestar [@membro ou responda] [quantia]*" }, { quoted: msg });
+                if (devedorAlvo === sender) return sock.sendMessage(from, { text: "❌ Você não pode emprestar dinheiro pra você mesmo!" }, { quoted: msg });
+                if (u.golds < valorEmp) return sock.sendMessage(from, { text: "❌ Você não tem Golds em mãos suficientes pra emprestar essa quantia!" }, { quoted: msg });
+
+                if (!db.usuarios[devedorAlvo]) db.usuarios[devedorAlvo] = criarUsuarioPadrao();
+                const devedorObj = db.usuarios[devedorAlvo];
+
+                u.golds -= valorEmp;
+                devedorObj.golds = (devedorObj.golds || 0) + valorEmp;
+
+                u.emprestimos_feitos = u.emprestimos_feitos || [];
+                u.emprestimos_feitos.push({ devedor: devedorAlvo, valor: valorEmp, timestamp: Date.now() });
+
+                devedorObj.emprestimos_recebidos = devedorObj.emprestimos_recebidos || [];
+                devedorObj.emprestimos_recebidos.push({ credor: sender, valor: valorEmp, timestamp: Date.now() });
+
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `🤝 *EMPRÉSTIMO:* Você emprestou *${valorEmp} Golds* para @${devedorAlvo.split('@')[0]}. A dívida aparece pros dois no !gold.`, mentions: [devedorAlvo] }, { quoted: msg });
+                break;
+            }
+
+            case 'investir': {
+                const valorInv = parseInt(args[0]);
+                if (!valorInv || valorInv <= 0) return sock.sendMessage(from, { text: "❌ Uso: *!investir [quantia]*" }, { quoted: msg });
+                if (u.investimento) return sock.sendMessage(from, { text: `❌ Você já tem *${u.investimento.valor} Golds* investidos. Use *!resgatar* quando o prazo terminar antes de investir de novo.` }, { quoted: msg });
+                if (u.golds < valorInv) return sock.sendMessage(from, { text: "❌ Golds em mãos insuficientes pra esse investimento!" }, { quoted: msg });
+
+                u.golds -= valorInv;
+                const duracaoInvestimento = 6 * 60 * 60 * 1000; // 6 horas
+                u.investimento = {
+                    valor: valorInv,
+                    criado_em: Date.now(),
+                    resgatavel_em: Date.now() + duracaoInvestimento,
+                    bonus_pct: 20
+                };
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `📈 *INVESTIMENTO REALIZADO:* *${valorInv} Golds* travados por 6 horas, com bônus de 20% ao resgatar. Use *!resgatar* quando o prazo passar! 🌊` }, { quoted: msg });
+                break;
+            }
+
+            case 'resgatar': {
+                if (!u.investimento) return sock.sendMessage(from, { text: "❌ Você não tem nenhum investimento ativo. Use *!investir [quantia]* primeiro." }, { quoted: msg });
+                if (Date.now() < u.investimento.resgatavel_em) {
+                    const restanteMs = u.investimento.resgatavel_em - Date.now();
+                    const restanteMin = Math.ceil(restanteMs / 60000);
+                    return sock.sendMessage(from, { text: `⏳ Seu investimento ainda não pode ser resgatado. Faltam aproximadamente *${restanteMin} minutos*.` }, { quoted: msg });
+                }
+
+                const retorno = Math.floor(u.investimento.valor * (1 + u.investimento.bonus_pct / 100));
+                const valorOriginal = u.investimento.valor;
+                u.golds += retorno;
+                u.investimento = null;
+                salvarDB(db);
+                await sock.sendMessage(from, { text: `💰 *RESGATE:* Seu investimento de *${valorOriginal} Golds* rendeu e voltou como *${retorno} Golds*! 🌊` }, { quoted: msg });
+                break;
+            }
+
             case 'rankgold': {
-                const exemploModelo = 'exemplo_modelo_usuario@s.whatsapp.net';
+                const ID_EXEMPLO = 'exemplo_modelo_usuario@s.whatsapp.net';
                 let ordenados = Object.keys(db.usuarios)
-                    .filter(id => id !== exemploModelo)
-                    .map(id => ({
-                        id,
-                        total: (db.usuarios[id].golds || 0) + (db.usuarios[id].banco || 0)
-                    }))
+                    .filter(id => id !== ID_EXEMPLO)
+                    .map(id => ({ id, total: (db.usuarios[id].golds || 0) + (db.usuarios[id].banco || 0) }))
                     .sort((a, b) => b.total - a.total)
                     .slice(0, 10);
 
-                let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  💳  𝗧𝗢𝗣 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  💳  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
+                let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  🪙  𝗧𝗢𝗣 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  🪙  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
                 const medalhas = ["🥇", "🥈", "🥉", "💧", "💧", "💧", "💧", "💧", "💧", "💧"];
                 ordenados.forEach((m, idx) => {
-                    rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 💳 *${m.total} 🪙*\n`;
+                    rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 🪙 *${m.total} Golds*\n`;
                 });
                 rankTxt += `\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: rankTxt, mentions: ordenados.map(m => m.id) }, { quoted: msg });
@@ -364,297 +589,116 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             }
 
             case 'loja': {
-                const lojaTxt = `🏪 *LOJA LEICYBOT v2* 🏪\n\n🛡️ *escudo* — Proteção antirroubo (50 🪙)\n🛡️ *seguro* — Reduz perda em assaltos pela metade (100 🪙)\n🔁 *recarga* — Zera limites diários de trabalho/mineração (80 🪙)\n🔒 *cofreblindado* — Dificulta roubos ao banco por 3 dias (200 🪙)\n🎣 *isca* — Aumenta prêmios de pesca por 24h (120 🪙)\n🍀 *sortegrande* — Melhora chances em jogos por 5 rodadas (150 🪙)\n📢 *apresentacaobuy* — Ativa anúncios de título (100 🪙)\n\n🎖️ *TÍTULOS:*\n🔴 Lendários (3000 🪙) — 1 dono/grupo\n  luasuperior1 | pecadoganancia | reipiratas | vingadorhogwarts | donodabanca\n🟡 Ouro (1500 🪙) — 5 donos/grupo\n  luasuperior2 | luasuperior3 | supersaiyajin | chefedehawkins | hereditariajoseon\n⚪ Prata (500 🪙) — 15 donos/grupo\n  luainferior1..5 | hashiraagua | satorugojo | heartthrobseul | garidekonoha | membr...\n\n👉 Compre com: *!comprar [nome]*`;
+                const lojaTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██         🏪  𝗟𝗢𝗝𝗔 𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧  🏪         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🛡️ *escudo* — 50 🪙\n   Bloqueia 100% de 1 assalto (!assaltar), quebra com o uso.\n\n📢 *apresentacaobuy* — 100 🪙\n   Ativa o anúncio automático do seu título no chat.\n\n🩹 *seguroparcial* — 80 🪙\n   Reduz pela metade o valor roubado num !assaltar. Não quebra com o uso.\n\n🔋 *recargarapida* — 60 🪙\n   Uso único: zera na hora o limite diário de !trabalhar e !minerar.\n\n🔒 *cofreblindado* — 150 🪙\n   Reduz a chance de sucesso de um !roubar (mira o banco) contra você.\n\n🎣 *iscaespecial* — 70 🪙\n   Aumenta os prêmios do !pescar por 24 horas.\n\n🍀 *sortegrande* — 100 🪙\n   +10 fichas de segunda chance em !roleta / !slots / !dados.\n\n🔴 *TÍTULOS LENDÁRIOS* (3.000🪙 | limite 1 dono/grupo)\n➔ luasuperior1 | pecadoganancia | reipiratas | vingadorhogwarts | donodabanca\n\n🟡 *TÍTULOS DE OURO* (1.500🪙 | limite 5 donos/grupo)\n➔ luasuperior2 | luasuperior3 | supersaiyajin | chefedehawkins | hereditariajoseon\n\n⚪ *TÍTULOS DE PRATA* (500🪙 | limite 15 donos/grupo)\n➔ luainferior1 | luainferior2 | luainferior3 | luainferior5 | hashiraagua | satorugojo | heartthrobseul | garidekonoha | membroround6 | ceodeseul | cacadordemogorgon | estudanteshisui\n\n👉 Use: *!comprar [nome_do_item]*\n⚠️ Só é possível ter 1 título comprado por vez — use *!vendertitulo* antes de trocar.\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: lojaTxt }, { quoted: msg });
                 break;
             }
 
             case 'comprar': {
-                const item = args[0]?.toLowerCase();
-                if (!item) return sock.sendMessage(from, { text: "❌ Use: `!comprar escudo`, `!comprar luasuperior1`, etc." }, { quoted: msg });
+                const itemAlvo = args[0]?.toLowerCase();
+                if (!itemAlvo) return sock.sendMessage(from, { text: "❌ Indique o que deseja comprar! Ex: `!comprar escudo` ou `!comprar luasuperior3`" }, { quoted: msg });
 
-                // Itens da loja (não títulos)
-                if (item === 'escudo') {
-                    if (u.golds < 50) return sock.sendMessage(from, { text: "❌ Golds insuficientes (50 🪙)." }, { quoted: msg });
-                    if (u.escudo) return sock.sendMessage(from, { text: "🛡️ Você já possui um escudo ativo." }, { quoted: msg });
+                if (itemAlvo === 'escudo') {
+                    if (u.golds < 50) return sock.sendMessage(from, { text: "❌ Golds insuficientes! O Escudo custa 50 Golds." }, { quoted: msg });
+                    if (u.escudo) return sock.sendMessage(from, { text: "🛡️ Você já possui um escudo ativo em sua conta!" }, { quoted: msg });
                     u.golds -= 50;
                     u.escudo = true;
                     salvarDB(db);
-                    return sock.sendMessage(from, { text: "🛡️ *ESCUDO ADQUIRIDO:* Seu sistema de segurança está ativo contra o próximo assalto!" }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "🛡️ *ESCUDO ADQUIRIDO:* Seu sistema de segurança está ativo contra o próximo assalto! 🌊" }, { quoted: msg });
                 }
-                if (item === 'seguro') {
-                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes (100 🪙)." }, { quoted: msg });
-                    if (u.seguro_parcial) return sock.sendMessage(from, { text: "🛡️ Você já possui o Seguro Parcial ativo." }, { quoted: msg });
-                    u.golds -= 100;
-                    u.seguro_parcial = true;
-                    salvarDB(db);
-                    return sock.sendMessage(from, { text: "🛡️ *SEGURO PARCIAL ATIVADO:* Seu próximo assalto terá o valor reduzido pela metade." }, { quoted: msg });
-                }
-                if (item === 'recarga') {
-                    if (u.golds < 80) return sock.sendMessage(from, { text: "❌ Golds insuficientes (80 🪙)." }, { quoted: msg });
-                    u.golds -= 80;
-                    if (!u.itens) u.itens = {};
-                    u.itens.recarga = (u.itens.recarga || 0) + 1;
-                    salvarDB(db);
-                    return sock.sendMessage(from, { text: "🔁 *RECARGA RÁPIDA COMPRADA:* Use `!usar recarga` para zerar seus limites diários!" }, { quoted: msg });
-                }
-                if (item === 'cofreblindado') {
-                    if (u.golds < 200) return sock.sendMessage(from, { text: "❌ Golds insuficientes (200 🪙)." }, { quoted: msg });
-                    if (u.cofre_blindado_ate && u.cofre_blindado_ate > Date.now()) return sock.sendMessage(from, { text: "🔒 Você já tem um Cofre Blindado ativo." }, { quoted: msg });
-                    u.golds -= 200;
-                    u.cofre_blindado_ate = Date.now() + 3 * 24 * 60 * 60 * 1000; // 3 dias
-                    salvarDB(db);
-                    return sock.sendMessage(from, { text: "🔒 *COFRE BLINDADO ATIVO:* Seu banco estará mais protegido contra roubos por 3 dias!" }, { quoted: msg });
-                }
-                if (item === 'isca') {
-                    if (u.golds < 120) return sock.sendMessage(from, { text: "❌ Golds insuficientes (120 🪙)." }, { quoted: msg });
-                    u.golds -= 120;
-                    u.isca_especial_ate = Date.now() + 24 * 60 * 60 * 1000; // 24h
-                    salvarDB(db);
-                    return sock.sendMessage(from, { text: "🎣 *ISCA ESPECIAL ATIVADA:* Suas pescarias renderão mais por 24h!" }, { quoted: msg });
-                }
-                if (item === 'sortegrande') {
-                    if (u.golds < 150) return sock.sendMessage(from, { text: "❌ Golds insuficientes (150 🪙)." }, { quoted: msg });
-                    u.golds -= 150;
-                    u.sorte_grande_jogadas += 5;
-                    salvarDB(db);
-                    return sock.sendMessage(from, { text: "🍀 *SORTE GRANDE:* Você ganhou 5 rodadas com melhores chances em jogos de azar!" }, { quoted: msg });
-                }
-                if (item === 'apresentacaobuy') {
-                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes (100 🪙)." }, { quoted: msg });
+
+                if (itemAlvo === 'apresentacaobuy') {
+                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Custa 100 Golds." }, { quoted: msg });
                     u.golds -= 100;
                     u.apresentacao = true;
                     salvarDB(db);
-                    return sock.sendMessage(from, { text: "📢 *APRESENTAÇÃO ATIVADA:* Seus títulos serão anunciados ao interagir!" }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "📢 *APRESENTAÇÃO ATIVADA:* Seus títulos cadastrados serão anunciados sempre que interagir!" }, { quoted: msg });
                 }
 
-                // Títulos
-                const titulo = catalogoTitulos[item];
-                if (!titulo) return sock.sendMessage(from, { text: "❌ Item não encontrado. Use `!loja` para ver as opções." }, { quoted: msg });
+                if (itemAlvo === 'seguroparcial') {
+                    if (u.golds < 80) return sock.sendMessage(from, { text: "❌ Golds insuficientes! O Seguro Parcial custa 80 Golds." }, { quoted: msg });
+                    if (u.seguro_parcial) return sock.sendMessage(from, { text: "🩹 Você já possui o Seguro Parcial ativo!" }, { quoted: msg });
+                    u.golds -= 80;
+                    u.seguro_parcial = true;
+                    salvarDB(db);
+                    return sock.sendMessage(from, { text: "🩹 *SEGURO PARCIAL ATIVADO:* Roubos contra você agora rendem metade do valor pro atacante, indefinidamente! 🌊" }, { quoted: msg });
+                }
 
-                if (u.golds < titulo.preco) return sock.sendMessage(from, { text: `❌ Saldo insuficiente! O título *${titulo.nome}* custa ${titulo.preco} 🪙.` }, { quoted: msg });
+                if (itemAlvo === 'recargarapida') {
+                    if (u.golds < 60) return sock.sendMessage(from, { text: "❌ Golds insuficientes! A Recarga Rápida custa 60 Golds." }, { quoted: msg });
+                    u.golds -= 60;
+                    u.trabalhos_hoje = 0;
+                    u.mineracoes_hoje = 0;
+                    salvarDB(db);
+                    return sock.sendMessage(from, { text: "🔋 *RECARGA RÁPIDA USADA:* Seus limites diários de !trabalhar e !minerar foram zerados na hora! 🌊" }, { quoted: msg });
+                }
+
+                if (itemAlvo === 'cofreblindado') {
+                    if (u.golds < 150) return sock.sendMessage(from, { text: "❌ Golds insuficientes! O Cofre Blindado custa 150 Golds." }, { quoted: msg });
+                    if (u.cofre_blindado) return sock.sendMessage(from, { text: "🔒 Você já possui o Cofre Blindado ativo!" }, { quoted: msg });
+                    u.golds -= 150;
+                    u.cofre_blindado = true;
+                    salvarDB(db);
+                    return sock.sendMessage(from, { text: "🔒 *COFRE BLINDADO ATIVADO:* Seu banco agora está mais protegido contra !roubar! 🌊" }, { quoted: msg });
+                }
+
+                if (itemAlvo === 'iscaespecial') {
+                    if (u.golds < 70) return sock.sendMessage(from, { text: "❌ Golds insuficientes! A Isca Especial custa 70 Golds." }, { quoted: msg });
+                    u.golds -= 70;
+                    u.isca_especial_ate = Date.now() + 86400000;
+                    salvarDB(db);
+                    return sock.sendMessage(from, { text: "🎣 *ISCA ESPECIAL ATIVADA:* Seus prêmios de !pescar ficam turbinados pelas próximas 24 horas! 🌊" }, { quoted: msg });
+                }
+
+                if (itemAlvo === 'sortegrande') {
+                    if (u.golds < 100) return sock.sendMessage(from, { text: "❌ Golds insuficientes! Sorte Grande custa 100 Golds." }, { quoted: msg });
+                    u.golds -= 100;
+                    u.sorte_grande_jogadas = (u.sorte_grande_jogadas || 0) + 10;
+                    salvarDB(db);
+                    return sock.sendMessage(from, { text: `🍀 *SORTE GRANDE ATIVADA:* +10 fichas de segunda chance pra !roleta / !slots / !dados! Total agora: ${u.sorte_grande_jogadas}.` }, { quoted: msg });
+                }
+
+                const itemTitulo = catálogoTítulos[itemAlvo];
+                if (!itemTitulo) return sock.sendMessage(from, { text: "❌ Item ou título não encontrado em nossa vitrine. Digite *!loja* para ver as opções!" }, { quoted: msg });
+
+                if (u.golds < itemTitulo.preco) return sock.sendMessage(from, { text: `❌ Saldo insuficiente! O título *${itemTitulo.nome}* exige *${itemTitulo.preco} Golds* em mãos.` }, { quoted: msg });
 
                 let limitesRaridade = { "Lendario": 1, "Ouro": 5, "Prata": 15 };
-                if (contarDonosRaridade(titulo.raridade) >= limitesRaridade[titulo.raridade]) {
-                    return sock.sendMessage(from, { text: `❌ Vagas esgotadas para títulos ${titulo.raridade} neste grupo.` }, { quoted: msg });
+                if (contarDonosRaridade(itemTitulo.raridade) >= limitesRaridade[itemTitulo.raridade]) {
+                    return sock.sendMessage(from, { text: `❌ Vagas esgotadas no grupo para títulos de nível *${itemTitulo.raridade}*! Aguarde alguém vender.` }, { quoted: msg });
                 }
 
-                if (u.titulo_slot1 === titulo.nome || u.titulo_slot2 === titulo.nome) {
+                if (u.titulo_comprado === itemTitulo.nome) {
                     return sock.sendMessage(from, { text: "❌ Você já possui esse título equipado!" }, { quoted: msg });
                 }
-
-                if (!u.titulo_slot1) {
-                    u.titulo_slot1 = titulo.nome;
-                } else {
-                    return sock.sendMessage(from, { text: "❌ Você já tem um título comprado no slot 1. Use `!vendertitulo` para liberar." }, { quoted: msg });
+                if (u.titulo_comprado) {
+                    return sock.sendMessage(from, { text: `❌ Você já tem o título *${u.titulo_comprado}* equipado. Use *!vendertitulo* antes de comprar outro — só cabe 1 por vez.` }, { quoted: msg });
                 }
 
-                u.golds -= titulo.preco;
-                u.data_expiracao = Date.now() + 604800000; // 1 semana
+                u.titulo_comprado = itemTitulo.nome;
+                u.golds -= itemTitulo.preco;
+                u.data_expiracao = Date.now() + 604800000;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `🎉 *COMPRA EFETUADA:* Você adquiriu o título *${titulo.nome}* por 1 semana!` }, { quoted: msg });
+                await sock.sendMessage(from, { text: `🎉 *COMPRA EFETUADA:* Você adquiriu o título *${itemTitulo.nome}* por 1 semana! 🌊` }, { quoted: msg });
                 break;
             }
 
             case 'vendertitulo': {
-                u.titulo_slot1 = null;
+                if (!u.titulo_comprado) return sock.sendMessage(from, { text: "🎭 Você não tem nenhum título comprado equipado no momento." }, { quoted: msg });
+                u.titulo_comprado = null;
                 u.data_expiracao = null;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: "🎭 Slots de títulos redefinidos. Vagas liberadas!" }, { quoted: msg });
+                await sock.sendMessage(from, { text: "🎭 Título comprado removido com sucesso. Vaga liberada pra comprar outro! 💧" }, { quoted: msg });
                 break;
             }
 
             case 'apresentacao': {
                 if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
-                    return sock.sendMessage(from, { text: "🌊 Use: *!apresentacao on* ou *!apresentacao off*" }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "🌊 Use: *!apresentacao on* ou *!apresentacao off* para alternar os anúncios!" }, { quoted: msg });
                 }
                 u.apresentacao = args[0] === 'on';
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `📢 Anúncio automático de títulos: *${args[0].toUpperCase()}*.` }, { quoted: msg });
-                break;
-            }
-
-            // Novos jogos de azar
-            case 'roleta': {
-                const aposta = parseInt(args[0]);
-                const escolha = args[1]?.toLowerCase();
-                if (isNaN(aposta) || aposta <= 0 || !escolha) return sock.sendMessage(from, { text: "❌ Uso: `!roleta [aposta] [vermelho/preto/numero]`" }, { quoted: msg });
-                if (u.golds < aposta) return sock.sendMessage(from, { text: "❌ Saldo insuficiente." }, { quoted: msg });
-
-                const numeroSorteado = Math.floor(Math.random() * 37); // 0-36
-                let corSorteada = numeroSorteado === 0 ? 'zero' : (numeroSorteado % 2 === 0 ? 'preto' : 'vermelho');
-                let ganhou = false;
-                let multiplicador = 0;
-
-                if (escolha === 'vermelho' || escolha === 'preto') {
-                    if (escolha === corSorteada) {
-                        ganhou = true;
-                        multiplicador = 2;
-                    }
-                } else if (!isNaN(escolha)) {
-                    const numEscolhido = parseInt(escolha);
-                    if (numEscolhido >= 0 && numEscolhido <= 36 && numEscolhido === numeroSorteado) {
-                        ganhou = true;
-                        multiplicador = 14;
-                    }
-                }
-
-                if (ganhou) {
-                    const premio = aposta * multiplicador;
-                    u.golds += premio - aposta;
-                    salvarDB(db);
-                    await sock.sendMessage(from, { text: `🎡 *ROLETA:* Número ${numeroSorteado} (${corSorteada}). Você ganhou *${premio} 🪙*!` }, { quoted: msg });
-                } else {
-                    u.golds -= aposta;
-                    salvarDB(db);
-                    await sock.sendMessage(from, { text: `🎡 *ROLETA:* Número ${numeroSorteado} (${corSorteada}). Você perdeu ${aposta} 🪙.` }, { quoted: msg });
-                }
-                break;
-            }
-
-            case 'slots': {
-                const aposta = parseInt(args[0]);
-                if (isNaN(aposta) || aposta <= 0) return sock.sendMessage(from, { text: "❌ Uso: `!slots [aposta]`" }, { quoted: msg });
-                if (u.golds < aposta) return sock.sendMessage(from, { text: "❌ Saldo insuficiente." }, { quoted: msg });
-
-                const simbolos = ['🍒', '🍋', '🔔', '💎', '7️⃣'];
-                const s1 = simbolos[Math.floor(Math.random() * simbolos.length)];
-                const s2 = simbolos[Math.floor(Math.random() * simbolos.length)];
-                const s3 = simbolos[Math.floor(Math.random() * simbolos.length)];
-                let premio = 0;
-
-                if (s1 === s2 && s2 === s3) {
-                    premio = aposta * 10; // três iguais
-                } else if (s1 === s2 || s2 === s3 || s1 === s3) {
-                    premio = aposta * 2; // dois iguais
-                }
-
-                u.golds -= aposta;
-                if (premio > 0) u.golds += premio;
-                salvarDB(db);
-                const resultado = `🎰 *SLOTS:* [${s1} ${s2} ${s3}]\n${premio > 0 ? `🎉 Você ganhou ${premio} 🪙!` : '💧 Nada feito, você perdeu.'}`;
-                await sock.sendMessage(from, { text: resultado }, { quoted: msg });
-                break;
-            }
-
-            case 'apostar': {
-                const aposta = parseInt(args[0]);
-                if (isNaN(aposta) || aposta <= 0) return sock.sendMessage(from, { text: "❌ Uso: `!apostar [aposta]`" }, { quoted: msg });
-                if (u.golds < aposta) return sock.sendMessage(from, { text: "❌ Saldo insuficiente." }, { quoted: msg });
-
-                const chance = 0.45;
-                if (Math.random() < chance) {
-                    u.golds += aposta;
-                    salvarDB(db);
-                    await sock.sendMessage(from, { text: `🎲 *APOSTA:* Você dobrou! Ganhou ${aposta * 2} 🪙.` }, { quoted: msg });
-                } else {
-                    u.golds -= aposta;
-                    salvarDB(db);
-                    await sock.sendMessage(from, { text: `🎲 *APOSTA:* Você perdeu ${aposta} 🪙.` }, { quoted: msg });
-                }
-                break;
-            }
-
-            case 'dados': {
-                const aposta = parseInt(args[0]);
-                if (isNaN(aposta) || aposta <= 0) return sock.sendMessage(from, { text: "❌ Uso: `!dados [aposta]`" }, { quoted: msg });
-                if (u.golds < aposta) return sock.sendMessage(from, { text: "❌ Saldo insuficiente." }, { quoted: msg });
-
-                const dadoJogador = Math.floor(Math.random() * 6) + 1;
-                const dadoBot = Math.floor(Math.random() * 6) + 1;
-                let resultado;
-                if (dadoJogador > dadoBot) {
-                    u.golds += aposta;
-                    resultado = `🎲 Você tirou ${dadoJogador}, bot tirou ${dadoBot}. Você ganhou ${aposta * 2} 🪙!`;
-                } else if (dadoJogador < dadoBot) {
-                    u.golds -= aposta;
-                    resultado = `🎲 Você tirou ${dadoJogador}, bot tirou ${dadoBot}. Você perdeu ${aposta} 🪙.`;
-                } else {
-                    resultado = `🎲 Empate! Ambos tiraram ${dadoJogador}. Nada mudou.`;
-                }
-                salvarDB(db);
-                await sock.sendMessage(from, { text: resultado }, { quoted: msg });
-                break;
-            }
-
-            case 'pescar': {
-                if (u.pescas_hoje >= 5) return sock.sendMessage(from, { text: "🎣 Você já pescou 5 vezes hoje. Volte amanhã!" }, { quoted: msg });
-                u.pescas_hoje++;
-
-                let premioBase = Math.floor(Math.random() * 60) + 20;
-                if (u.isca_especial_ate && u.isca_especial_ate > Date.now()) {
-                    premioBase = Math.floor(premioBase * 1.7);
-                }
-                u.golds += premioBase;
-                salvarDB(db);
-                await sock.sendMessage(from, { text: `🎣 *PESCARIA:* Você pescou e conseguiu *${premioBase} 🪙*!` }, { quoted: msg });
-                break;
-            }
-
-            case 'raspadinha': {
-                if (u.raspadinhas_hoje >= 3) return sock.sendMessage(from, { text: "🎫 Você já raspou 3 vezes hoje. Tente amanhã!" }, { quoted: msg });
-                u.raspadinhas_hoje++;
-
-                const chanceRaspa = Math.random();
-                let premioRaspa = 0;
-                if (chanceRaspa < 0.1) premioRaspa = 200;
-                else if (chanceRaspa < 0.3) premioRaspa = 80;
-                else if (chanceRaspa < 0.6) premioRaspa = 20;
-
-                u.golds += premioRaspa;
-                salvarDB(db);
-                const msgRaspa = premioRaspa > 0
-                    ? `🎫 *RASPADINHA:* Você raspou e ganhou *${premioRaspa} 🪙*!`
-                    : `🎫 *RASPADINHA:* Não foi dessa vez... Tente novamente.`;
-                await sock.sendMessage(from, { text: msgRaspa }, { quoted: msg });
-                break;
-            }
-
-            case 'investir': {
-                const valor = parseInt(args[0]);
-                if (isNaN(valor) || valor <= 0) return sock.sendMessage(from, { text: "❌ Uso: `!investir [valor]`" }, { quoted: msg });
-                if (u.golds < valor) return sock.sendMessage(from, { text: "❌ Saldo insuficiente." }, { quoted: msg });
-                if (u.investimento_valor && u.investimento_valor > 0) return sock.sendMessage(from, { text: "❌ Você já tem um investimento ativo. Use `!resgatar` primeiro." }, { quoted: msg });
-
-                u.golds -= valor;
-                u.investimento_valor = valor;
-                u.investimento_timestamp = Date.now();
-                salvarDB(db);
-                await sock.sendMessage(from, { text: `📈 *INVESTIMENTO:* Você investiu *${valor} 🪙*. Use `!resgatar` para retirar com juros.` }, { quoted: msg });
-                break;
-            }
-
-            case 'resgatar': {
-                if (!u.investimento_valor || u.investimento_valor <= 0) return sock.sendMessage(from, { text: "❌ Você não tem nenhum investimento ativo." }, { quoted: msg });
-
-                const dias = Math.floor((Date.now() - u.investimento_timestamp) / (1000 * 60 * 60 * 24));
-                const taxaJuros = 0.05; // 5% ao dia
-                const juros = Math.floor(u.investimento_valor * taxaJuros * dias);
-                const total = u.investimento_valor + juros;
-                u.golds += total;
-                u.investimento_valor = 0;
-                u.investimento_timestamp = null;
-                salvarDB(db);
-                await sock.sendMessage(from, { text: `💰 *RESGATE:* Você resgatou *${total} 🪙* (${u.investimento_valor + juros} = investimento + ${juros} juros em ${dias} dias).` }, { quoted: msg });
-                break;
-            }
-
-            case 'usar': {
-                const itemUsar = args[0]?.toLowerCase();
-                if (!itemUsar) return sock.sendMessage(from, { text: "❌ Use: `!usar recarga`" }, { quoted: msg });
-
-                if (itemUsar === 'recarga') {
-                    if (!u.itens || !u.itens.recarga || u.itens.recarga <= 0) return sock.sendMessage(from, { text: "❌ Você não possui Recarga Rápida." }, { quoted: msg });
-                    u.itens.recarga--;
-                    u.trabalhos_hoje = 0;
-                    u.mineracoes_hoje = 0;
-                    u.pescas_hoje = 0;
-                    u.raspadinhas_hoje = 0;
-                    salvarDB(db);
-                    await sock.sendMessage(from, { text: "🔁 *RECARGA RÁPIDA USADA:* Seus limites diários foram zerados!" }, { quoted: msg });
-                } else {
-                    return sock.sendMessage(from, { text: "❌ Item desconhecido." }, { quoted: msg });
-                }
+                await sock.sendMessage(from, { text: `📢 Anúncio automático de títulos definido para: *${args[0].toUpperCase()}*.` }, { quoted: msg });
                 break;
             }
 
@@ -669,4 +713,3 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 module.exports = economiaModulo;
 module.exports.economiaModulo = economiaModulo;
 module.exports.default = economiaModulo;
-                

@@ -1,18 +1,15 @@
 // modulos/outros.js
 const criarUsuarioPadrao = require('./usuarioPadrao');
-const { obterAlvo } = require('./jidUtils');
+const { resolverIdentidade, obterAlvo } = require('./jidUtils');
 
 const outrosModulo = async (sock, msg, comando, args, db, salvarDB) => {
     try {
         const from = msg.key.remoteJid;
-        let sender = msg.key.participant || msg.key.remoteJid;
+        // v2: usa o resolvedor de identidade central (antes fazia a limpeza de
+        // ":dispositivo" na mão e não tratava @lid — mesmo problema de
+        // fragmentação de conta corrigido nos outros módulos).
+        const sender = resolverIdentidade(msg.key);
 
-        // Normaliza JID multi-dispositivo
-        if (sender && sender.includes(':')) {
-            sender = sender.split(':')[0] + '@s.whatsapp.net';
-        }
-
-        // Garante que o usuário exista
         if (!db.usuarios) db.usuarios = {};
         if (!db.usuarios[sender]) {
             db.usuarios[sender] = criarUsuarioPadrao();
@@ -22,37 +19,24 @@ const outrosModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
         switch (comando) {
             case 'menuoutros': {
-                const txtMenuOutros = `░▒▓█████████████████████████████████████▓▒░\n📊       📊  𝗖𝗘𝗡𝗧𝗥𝗔𝗟 𝗗𝗘 𝗣𝗘𝗥𝗦𝗢𝗡𝗔𝗟𝗜𝗭𝗔𝗖̧𝗔̃𝗢  📊       📊\n░▒▓█████████████████████████████████████▓▒░\n\nConfigure sua identidade interna no Leicybot:\n\n🔹 *!perfil* ➔ Exibe seu cartão de perfil global (ou responda a alguém para ver o dessa pessoa).\n🔹 *!setbio [texto]* ➔ Altera a biografia do seu perfil.\n🔹 *!setidade [número]* ➔ Define sua idade.\n\n💍 *Casamento virtual mora no !menujogos* (comandos !casar, !aceitar, !divorciar).\n\n░▒▓█████████████████████████████████████▓▒░`;
+                const txtMenuOutros = `░▒▓█████████████████████████████████████▓▒░\n📊       📊  𝗖𝗘𝗡𝗧𝗥𝗔𝗟 𝗗𝗘 𝗣𝗘𝗥𝗦𝗢𝗡𝗔𝗟𝗜𝗭𝗔𝗖̧𝗔̃𝗢  📊       📊\n░▒▓█████████████████████████████████████▓▒░\n\nConfigure sua identidade interna no Leicybot:\n\n🔹 *!perfil* ➔ Exibe seu cartão de perfil global (responda alguém pra ver o dela).\n🔹 *!setbio [texto]* ➔ Altera a biografia do seu perfil.\n🔹 *!setidade [número]* ➔ Define sua idade.\n\n💍 *Casamento virtual mora no !menujogos* (comandos !casar, !aceitar, !divorciar).\n\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: txtMenuOutros }, { quoted: msg });
                 break;
             }
 
             case 'perfil': {
-                // Mecânica de resposta: se houver alvo (menção/resposta), mostra o perfil dele
-                const alvo = obterAlvo(msg) || sender;
-                if (!db.usuarios[alvo]) {
-                    db.usuarios[alvo] = criarUsuarioPadrao();
+                // v2: responder à mensagem de alguém mostra o perfil dessa pessoa,
+                // igual o !gold — mesma mecânica de marcar/responder (obterAlvo).
+                const alvoPerfilMarcado = obterAlvo(msg);
+                let alvoPerfilId = sender;
+                if (alvoPerfilMarcado && alvoPerfilMarcado !== sender) {
+                    if (!db.usuarios[alvoPerfilMarcado]) db.usuarios[alvoPerfilMarcado] = criarUsuarioPadrao();
+                    alvoPerfilId = alvoPerfilMarcado;
                 }
-                const uAlvo = db.usuarios[alvo];
+                const uPerfilAlvo = db.usuarios[alvoPerfilId];
 
-                // Formata os títulos para exibição
-                let titulosTxt = '';
-                if (uAlvo.titulo_slot1) {
-                    titulosTxt += `🎖️ Título Comprado: ${uAlvo.titulo_slot1}\n`;
-                }
-                if (uAlvo.titulo_slot2) {
-                    titulosTxt += `🌟 Título Especial: ${uAlvo.titulo_slot2}\n`;
-                }
-                if (!titulosTxt) titulosTxt = 'Nenhum título equipado.\n';
-
-                const estadoCivil = uAlvo.conjugue ? `Casado(a) com @${uAlvo.conjugue.split('@')[0]}` : 'Solteiro(a)';
-
-                const txtPerfil = `👤 *PERFIL DE USUÁRIO* 👤\n\n➔ *Marcador:* @${alvo.split('@')[0]}\n➔ *Idade:* ${uAlvo.idade || "Não informada"}\n➔ *Estado Civil:* ${estadoCivil}\n➔ *Biografia:* ${uAlvo.bio || "Sem bio definida."}\n${titulosTxt}`;
-
-                const mentions = [alvo];
-                if (uAlvo.conjugue) mentions.push(uAlvo.conjugue);
-
-                await sock.sendMessage(from, { text: txtPerfil, mentions }, { quoted: msg });
+                const txtPerfil = `👤 *PERFIL DE USUÁRIO* 👤\n\n➔ *Marcador:* @${alvoPerfilId.split('@')[0]}\n➔ *Idade:* ${uPerfilAlvo.idade || "Não informada"}\n➔ *Estado Civil:* ${uPerfilAlvo.estado_civil || "Solteiro(a)"}\n➔ *Biografia:* ${uPerfilAlvo.bio || "Sem bio definida."}`;
+                await sock.sendMessage(from, { text: txtPerfil, mentions: [alvoPerfilId] }, { quoted: msg });
                 break;
             }
 

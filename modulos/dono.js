@@ -1,188 +1,132 @@
-// modulos/dono.js
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const { resolverIdentidade, obterAlvo } = require('./jidUtils');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+
+// Detecta se a mensagem usou @menção explícita (em vez de responder/reply).
+// Precisamos saber disso pra parsear corretamente args.slice(1) vs args:
+// se teve @menção, o token "@numero" ocupa args[0]; se foi só resposta,
+// não tem esse token e o texto útil começa já em args[0].
+const temMencaoExplicita = (mensagem) => {
+    const c = mensagem.message?.extendedTextMessage?.contextInfo;
+    return !!(c?.mentionedJid && c.mentionedJid[0]);
+};
 
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
     let sender = resolverIdentidade(msg.key);
 
-    // ⚠️ CONFIGURAÇÃO DO DONO OFICIAL
+    // ══════════════════════════════════════════════════════════════
+    // ⚠️ CONFIGURAÇÃO DO ID DO DONO
+    // ══════════════════════════════════════════════════════════════
     const DONO_OFICIAL = '258877080511@s.whatsapp.net';
 
+    // Bloqueio de segurança contra impostores
     if (sender !== DONO_OFICIAL) {
         return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Apenas o meu criador supremo, *Olden*, pode usar este comando! 🌊" }, { quoted: msg });
     }
 
-    // Inicializações preventivas
+    // Garantir inicialização dos arrays globais do bot
     if (!db.config_bot) db.config_bot = {};
     if (!db.config_bot.titulos_criados) db.config_bot.titulos_criados = ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"];
     if (!db.config_bot.comandos_desativados) db.config_bot.comandos_desativados = [];
 
-    // Função auxiliar para formatar bytes
-    const formatBytes = (bytes) => {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
-
     switch (comando) {
         case 'menudono': {
-            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!ping* ➔ Ver latência, uptime, memória e CPU do servidor.\n🔹 *!reiniciar* ➔ Reiniciar o processo do bot no servidor.\n🔹 *!desligar / !ligar* ➔ Pausa ou retoma o processamento de comandos.\n🔹 *!backup* ➔ Envia o banco de dados atual no seu privado.\n🔹 *!listagrupos* ➔ Lista todos os grupos onde o bot está.\n🔹 *!estatisticas* ➔ Visão geral de usuários, grupos e economia.\n\n🌟 *👑 CONTROLE DE TÍTULOS E PERMISSÕES DE ELITE:*\n🔹 *!criartitulo [nome]* ➔ Registra um novo título no sistema.\n🔹 *!dartitulo [@membro] [nome]* ➔ Concede um título (especiais vão para o slot 2, regulares para slot 1).\n🔹 *!addcelestial [@membro]* ➔ Atalho para dar o título especial Celestial (slot 2).\n🔹 *!removoertitulo [@membro] [nome]* ➔ Retira um título de um usuário.\n🔹 *!concederpermissao [@membro] [cmd]* ➔ Dá acesso a comandos ADM para não-adms.\n\n💰 *🪙 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Moedas.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto* [responder imagem] ou [URL] ➔ Define a foto do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n🔹 *!transmitir [texto]* ➔ Envia um aviso para todos os grupos conhecidos.\n░▒▓█████████████████████████████████████▓▒░`;
+            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!reiniciar* ➔ Reiniciar buffers e contêineres do Railway.\n🔹 *!desligar / !ligar* ➔ Pausa ou retoma o processamento de comandos.\n🔹 *!ping* ➔ Uptime, RAM e carga do servidor.\n🔹 *!backup* ➔ Envia o database.json atual no seu privado.\n🔹 *!listagrupos* ➔ Lista os grupos onde estou presente.\n🔹 *!estatisticas* ➔ Números gerais do bot.\n🔹 *!migrarv2* ➔ Rodar 1x só, depois de atualizar pra v2 (reset de golds + migração de títulos).\n\n🌟 *👑 CONTROLE DE TÍTULOS E PERMISSÕES DE ELITE:*\n🔹 *!criartitulo [nome]* ➔ Registra um novo título no sistema do bot.\n🔹 *!dartitulo [@membro ou responda] [nome]* ➔ Concede um título (com anúncio se for especial).\n🔹 *!addcelestial [@membro ou responda]* ➔ Atalho para dar o título especial Celestial direto.\n🔹 *!removoertitulo [@membro ou responda] [nome]* ➔ Retira um título de um usuário.\n🔹 *!concederpermissao [@membro ou responda] [cmd]* ➔ Dá acesso a comandos ADM para não-adms.\n\n💰 *🪙 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro/número/responda] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro ou responda] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Moedas.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto [URL]* ou responda uma imagem com *!setfoto* ➔ Modificar a imagem oficial do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n🔹 *!transmitir [texto]* ➔ Envia um aviso para todos os grupos conhecidos.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: textoMenuDono }, { quoted: msg });
-            break;
-        }
-
-        case 'ping': {
-            const start = Date.now();
-            const uptimeSeg = process.uptime();
-            const uptimeStr = `${Math.floor(uptimeSeg / 3600)}h ${Math.floor((uptimeSeg % 3600) / 60)}m ${Math.floor(uptimeSeg % 60)}s`;
-            const memTotal = os.totalmem();
-            const memLivre = os.freemem();
-            const memUso = ((memTotal - memLivre) / memTotal * 100).toFixed(1);
-            const cpuLoad = os.loadavg()[0].toFixed(2);
-            const ping = Date.now() - start;
-
-            const pingTxt = `🏓 *PONG!*\n\n⏱️ Latência: ${ping}ms\n⏳ Uptime: ${uptimeStr}\n💾 RAM: ${formatBytes(memTotal - memLivre)} / ${formatBytes(memTotal)} (${memUso}%)\n⚡ CPU Load: ${cpuLoad}\n📦 Node: ${process.version}`;
-            await sock.sendMessage(from, { text: pingTxt }, { quoted: msg });
-            break;
-        }
-
-        case 'backup': {
-            try {
-                const dbBuffer = Buffer.from(JSON.stringify(db, null, 2), 'utf-8');
-                // Envia no privado do dono
-                await sock.sendMessage(DONO_OFICIAL, {
-                    document: dbBuffer,
-                    mimetype: 'application/json',
-                    fileName: `backup_${new Date().toISOString().slice(0,10)}.json`
-                });
-                await sock.sendMessage(from, { text: "📁 *BACKUP:* O banco de dados foi enviado no seu privado, Chefe." }, { quoted: msg });
-            } catch (e) {
-                console.error('[BACKUP] Erro:', e);
-                await sock.sendMessage(from, { text: "❌ Falha ao gerar o backup." }, { quoted: msg });
-            }
-            break;
-        }
-
-        case 'listagrupos': {
-            const grupos = Object.keys(db.grupos || {});
-            if (grupos.length === 0) {
-                return sock.sendMessage(from, { text: "📋 Nenhum grupo conhecido ainda." }, { quoted: msg });
-            }
-            let lista = `📋 *GRUPOS CONHECIDOS (${grupos.length})*\n\n`;
-            for (let i = 0; i < grupos.length; i++) {
-                try {
-                    const meta = await sock.groupMetadata(grupos[i]);
-                    lista += `${i+1}. ${meta.subject} (${grupos[i]})\n`;
-                } catch (e) {
-                    lista += `${i+1}. ${grupos[i]} (sem acesso)\n`;
-                }
-            }
-            await sock.sendMessage(from, { text: lista }, { quoted: msg });
-            break;
-        }
-
-        case 'estatisticas': {
-            const totalUsuarios = Object.keys(db.usuarios || {}).length;
-            const totalGrupos = Object.keys(db.grupos || {}).length;
-            let totalGolds = 0;
-            Object.values(db.usuarios || {}).forEach(u => {
-                totalGolds += (u.golds || 0) + (u.banco || 0);
-            });
-            const statsTxt = `📊 *ESTATÍSTICAS GERAIS*\n\n👥 Usuários registrados: ${totalUsuarios}\n🌐 Grupos conhecidos: ${totalGrupos}\n🪙 Golds em circulação: ${totalGolds}\n📅 Títulos criados: ${db.config_bot.titulos_criados?.length || 0}`;
-            await sock.sendMessage(from, { text: statsTxt }, { quoted: msg });
             break;
         }
 
         case 'criartitulo': {
             const novoTitulo = args.join(" ").trim();
-            if (!novoTitulo) return sock.sendMessage(from, { text: "❌ Insira o nome do título. Ex: `!criartitulo Imperador`" }, { quoted: msg });
+            if (!novoTitulo) return sock.sendMessage(from, { text: "❌ Insira o nome do título que deseja criar! Ex: `!criartitulo Imperador`" }, { quoted: msg });
+
             if (db.config_bot.titulos_criados.includes(novoTitulo)) {
-                return sock.sendMessage(from, { text: "⚠️ Esse título já está cadastrado." }, { quoted: msg });
+                return sock.sendMessage(from, { text: "⚠️ Esse título já está cadastrado no sistema!" }, { quoted: msg });
             }
             db.config_bot.titulos_criados.push(novoTitulo);
             salvarDB(db);
-            await sock.sendMessage(from, { text: `✅ Título *${novoTitulo}* criado e disponível para concessão.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `✅ *TÍTULO CRIADO:* O título *${novoTitulo}* foi adicionado com sucesso e já pode ser distribuído!` }, { quoted: msg });
             break;
         }
 
         case 'dartitulo': {
-            const alvo = obterAlvo(msg) || msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            const tituloParaDar = args.slice(1).join(" ").trim(); // primeiro arg é o @, ignoramos
+            const teveMencaoDar = temMencaoExplicita(msg);
+            const alvoDar = obterAlvo(msg);
+            const tituloParaDar = (teveMencaoDar ? args.slice(1) : args).join(" ").trim();
 
-            if (!alvo || !tituloParaDar) {
-                return sock.sendMessage(from, { text: "❌ Uso: *!dartitulo @membro [Nome do Título]*" }, { quoted: msg });
+            if (!alvoDar || !tituloParaDar) {
+                return sock.sendMessage(from, { text: "❌ Uso correto: *!dartitulo [@membro ou responda] [Nome do Título]*" }, { quoted: msg });
             }
-            if (!db.usuarios[alvo]) db.usuarios[alvo] = criarUsuarioPadrao();
 
-            // Lista de títulos especiais (fixos) que vão para o slot 2
-            const especiais = ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"];
+            if (!db.usuarios[alvoDar]) db.usuarios[alvoDar] = criarUsuarioPadrao();
+
+            const especiais = db.config_bot.titulos_criados.filter(t => ["Celestial", "4Espadas⚔️🌊", "Gavião da noite"].includes(t))
+                .concat(["Celestial", "4Espadas⚔️🌊", "Gavião da noite"]);
+
             if (especiais.includes(tituloParaDar)) {
-                // Slot 2 – Título Especial (substitui o que estiver lá)
-                db.usuarios[alvo].titulo_slot2 = tituloParaDar;
-                db.usuarios[alvo].apresentacao = true; // ativa anúncio automático
+                // Slot 2 — título especial, só o dono concede
+                db.usuarios[alvoDar].titulo_especial = tituloParaDar;
+                db.usuarios[alvoDar].apresentacao = true;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `👑 *DECRETO REAL:* @${alvo.split('@')[0]} recebeu o título especial 🌟 *${tituloParaDar}* (Slot 2).`, mentions: [alvo] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `👑 *DECRETO REAL DA COROA:* @${alvoDar.split('@')[0]} recebeu o título de classe especial 🌟 *${tituloParaDar}* concedido por Olden! Sua entrada passará a ser anunciada no chat.`, mentions: [alvoDar] }, { quoted: msg });
             } else {
-                // Título regular (slot 1)
                 if (!db.config_bot.titulos_criados.includes(tituloParaDar)) {
-                    return sock.sendMessage(from, { text: "❌ Esse título não foi criado ainda. Use `!criartitulo` primeiro." }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "❌ Esse título ainda não foi criado. Crie-o primeiro usando `!criartitulo`." }, { quoted: msg });
                 }
-                db.usuarios[alvo].titulo_slot1 = tituloParaDar;
+                // Slot 1 — título comprado/regular. Como o dono está concedendo
+                // manualmente, sobrescreve direto (sem exigir !vendertitulo antes).
+                db.usuarios[alvoDar].titulo_comprado = tituloParaDar;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `✅ Título regular *${tituloParaDar}* atribuído a @${alvo.split('@')[0]} (Slot 1).`, mentions: [alvo] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `✅ O título regular *${tituloParaDar}* foi atribuído com sucesso para @${alvoDar.split('@')[0]}!`, mentions: [alvoDar] }, { quoted: msg });
             }
             break;
         }
 
         case 'addcelestial': {
-            const alvoCelestial = obterAlvo(msg) || msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            if (!alvoCelestial) return sock.sendMessage(from, { text: "❌ Marque ou responda a quem receberá o título Celestial." }, { quoted: msg });
+            const alvoCelestial = obterAlvo(msg);
+            if (!alvoCelestial) return sock.sendMessage(from, { text: "❌ Marque ou responda quem vai receber o título Celestial! Ex: `!addcelestial @membro`" }, { quoted: msg });
 
             if (!db.usuarios[alvoCelestial]) db.usuarios[alvoCelestial] = criarUsuarioPadrao();
-            db.usuarios[alvoCelestial].titulo_slot2 = "Celestial";
+            db.usuarios[alvoCelestial].titulo_especial = "Celestial";
             db.usuarios[alvoCelestial].apresentacao = true;
             salvarDB(db);
-            await sock.sendMessage(from, { text: `👑 @${alvoCelestial.split('@')[0]} agora possui o título especial *Celestial* (Slot 2)!`, mentions: [alvoCelestial] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `👑 @${alvoCelestial.split('@')[0]} recebeu o título especial *Celestial* diretamente!`, mentions: [alvoCelestial] }, { quoted: msg });
             break;
         }
 
         case 'removoertitulo': {
-            const alvoRemover = obterAlvo(msg) || msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            const tituloParaRemover = args.slice(1).join(" ").trim();
+            const teveMencaoRem = temMencaoExplicita(msg);
+            const alvoRemover = obterAlvo(msg);
+            const tituloParaRemover = (teveMencaoRem ? args.slice(1) : args).join(" ").trim();
 
             if (!alvoRemover || !tituloParaRemover) {
-                return sock.sendMessage(from, { text: "❌ Uso: *!removoertitulo @membro [Nome do Título]*" }, { quoted: msg });
+                return sock.sendMessage(from, { text: "❌ Uso correto: *!removoertitulo [@membro ou responda] [Nome do Título]*" }, { quoted: msg });
             }
 
             if (db.usuarios[alvoRemover]) {
-                const u = db.usuarios[alvoRemover];
-                if (u.titulo_slot1 === tituloParaRemover) {
-                    u.titulo_slot1 = null;
-                } else if (u.titulo_slot2 === tituloParaRemover) {
-                    u.titulo_slot2 = null;
-                    u.apresentacao = false; // desliga anúncio se não houver mais título especial
+                if (db.usuarios[alvoRemover].titulo_especial === tituloParaRemover) {
+                    db.usuarios[alvoRemover].titulo_especial = null;
+                    db.usuarios[alvoRemover].apresentacao = false;
+                } else if (db.usuarios[alvoRemover].titulo_comprado === tituloParaRemover) {
+                    db.usuarios[alvoRemover].titulo_comprado = null;
+                    db.usuarios[alvoRemover].data_expiracao = null;
                 } else {
-                    return sock.sendMessage(from, { text: "❌ O membro não possui esse título." }, { quoted: msg });
+                    return sock.sendMessage(from, { text: "❌ O membro não possui esse título ativo." }, { quoted: msg });
                 }
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `📉 Título *${tituloParaRemover}* removido de @${alvoRemover.split('@')[0]}.`, mentions: [alvoRemover] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `📉 *TÍTULO CASSADO:* O título *${tituloParaRemover}* foi destituído de @${alvoRemover.split('@')[0]} por ordem superior.`, mentions: [alvoRemover] }, { quoted: msg });
             }
             break;
         }
 
         case 'concederpermissao': {
-            const alvoPerm = obterAlvo(msg) || msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            const cmdPerm = args[1] ? args[1].toLowerCase().replace('!', '') : null;
+            const teveMencaoPerm = temMencaoExplicita(msg);
+            const alvoPerm = obterAlvo(msg);
+            const cmdPerm = (teveMencaoPerm ? args[1] : args[0]) ? (teveMencaoPerm ? args[1] : args[0]).toLowerCase().replace('!', '') : null;
 
             if (!alvoPerm || !cmdPerm) {
-                return sock.sendMessage(from, { text: "❌ Uso: *!concederpermissao @membro [comando]*" }, { quoted: msg });
+                return sock.sendMessage(from, { text: "❌ Uso correto: *!concederpermissao [@membro ou responda] [nome_do_comando]*" }, { quoted: msg });
             }
 
             if (!db.usuarios[alvoPerm]) db.usuarios[alvoPerm] = criarUsuarioPadrao();
@@ -192,17 +136,17 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 db.usuarios[alvoPerm].permissoes_especiais.push(cmdPerm);
                 salvarDB(db);
             }
-            await sock.sendMessage(from, { text: `🔑 Permissão para *!${cmdPerm}* concedida a @${alvoPerm.split('@')[0]}.`, mentions: [alvoPerm] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🔑 *PERMISSÃO ESPECÍFICA CONCEDIDA:* O usuário @${alvoPerm.split('@')[0]} agora possui autoridade para executar o comando *!${cmdPerm}* mesmo sem ser Administrador do grupo!`, mentions: [alvoPerm] }, { quoted: msg });
             break;
         }
 
         case 'manutencao': {
             if (!args[0] || (args[0] !== 'on' && args[0] !== 'off')) {
-                return sock.sendMessage(from, { text: "🌊 Use: *!manutencao on* ou *!manutencao off*" }, { quoted: msg });
+                return sock.sendMessage(from, { text: "🌊 Use: *!manutencao on* ou *!manutencao off* 💧" }, { quoted: msg });
             }
             db.config_bot.manutencao = args[0] === 'on';
             salvarDB(db);
-            await sock.sendMessage(from, { text: `⚙️ Modo manutenção: *${args[0].toUpperCase()}*.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `⚙️ *PAINEL SUPREMO:* Modo manutenção definido como: *${args[0].toUpperCase()}*.` }, { quoted: msg });
             break;
         }
 
@@ -213,90 +157,91 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             db.usuarios[sender].pescas_hoje = 0;
             db.usuarios[sender].raspadinhas_hoje = 0;
             salvarDB(db);
-            await sock.sendMessage(from, { text: "⚡ *MODO DEUS:* Limites diários zerados para você, Chefe." }, { quoted: msg });
+            await sock.sendMessage(from, { text: "⚡ *MODO DEUS:* Energias e limites diários zerados para você testar à vontade, Chefe Olden! 🌊" }, { quoted: msg });
             break;
         }
 
         case 'desativarcmd': {
-            if (!args[0]) return sock.sendMessage(from, { text: "❌ Diga qual comando desativar. Ex: `!desativarcmd assaltar`" }, { quoted: msg });
-            const cmd = args[0].toLowerCase().replace('!', '');
-            if (!db.config_bot.comandos_desativados.includes(cmd)) {
-                db.config_bot.comandos_desativados.push(cmd);
+            if (!args[0]) return sock.sendMessage(from, { text: "❌ Diga qual comando deseja desativar! Ex: `!desativarcmd assaltar`" }, { quoted: msg });
+            if (!db.config_bot.comandos_desativados.includes(args[0])) {
+                db.config_bot.comandos_desativados.push(args[0]);
                 salvarDB(db);
             }
-            await sock.sendMessage(from, { text: `🚫 Comando *!${cmd}* desativado globalmente.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🚫 O comando *!${args[0]}* foi desativado globalmente por ordem de Olden.` }, { quoted: msg });
             break;
         }
 
         case 'ativarcmd': {
-            if (!args[0]) return sock.sendMessage(from, { text: "❌ Diga qual comando reativar." }, { quoted: msg });
-            const cmd = args[0].toLowerCase().replace('!', '');
-            db.config_bot.comandos_desativados = db.config_bot.comandos_desativados.filter(c => c !== cmd);
+            if (!args[0]) return sock.sendMessage(from, { text: "❌ Diga qual comando deseja reativar!" }, { quoted: msg });
+            db.config_bot.comandos_desativados = db.config_bot.comandos_desativados.filter(c => c !== args[0]);
             salvarDB(db);
-            await sock.sendMessage(from, { text: `✅ Comando *!${cmd}* reativado.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `✅ O comando *!${args[0]}* foi reativado e liberado para os membros! 🌊` }, { quoted: msg });
             break;
         }
 
         case 'addgold': {
-            const alvo = obterAlvo(msg) || (args[0] ? args[0].replace(/\D/g, '') + '@s.whatsapp.net' : null);
+            const alvoMencaoAdd = obterAlvo(msg);
+            const mencionado = alvoMencaoAdd || (args[0] && /^\d+$/.test(args[0].replace(/\D/g, '')) && args[0].replace(/\D/g, '').length >= 8 ? args[0].replace(/\D/g, '') + '@s.whatsapp.net' : null);
             const quantia = parseInt(args[1] || args[0]);
-            if (!alvo || isNaN(quantia)) return sock.sendMessage(from, { text: "❌ Uso: *!addgold @membro [quantidade]*" }, { quoted: msg });
+            if (!mencionado || isNaN(quantia)) return sock.sendMessage(from, { text: "❌ Uso: *!addgold [@membro / número / responda] [quantidade]*" }, { quoted: msg });
 
-            if (!db.usuarios[alvo]) db.usuarios[alvo] = criarUsuarioPadrao();
-            db.usuarios[alvo].golds = (db.usuarios[alvo].golds || 0) + quantia;
+            if (!db.usuarios[mencionado]) db.usuarios[mencionado] = criarUsuarioPadrao();
+            db.usuarios[mencionado].golds += quantia;
             salvarDB(db);
-            await sock.sendMessage(from, { text: `🪙 *BANCO DE LEICYBOT:* Adicionados *${quantia} 🪙* à conta de @${alvo.split('@')[0]}.`, mentions: [alvo] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🪙 *BANCO DE LEICYBOT:* Injetados *${quantia} Moedas* na conta do usuário! 🌊` }, { quoted: msg });
             break;
         }
 
         case 'remgold': {
-            const alvo = obterAlvo(msg) || msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
-            const quantia = parseInt(args[1]);
-            if (!alvo || isNaN(quantia)) return sock.sendMessage(from, { text: "❌ Uso: *!remgold @membro [quantidade]*" }, { quoted: msg });
+            const alvoRem = obterAlvo(msg);
+            const quantiaRem = parseInt(args[1] || args[0]);
+            if (!alvoRem || isNaN(quantiaRem)) return sock.sendMessage(from, { text: "❌ Uso: *!remgold [@membro ou responda] [quantidade]*" }, { quoted: msg });
 
-            if (!db.usuarios[alvo]) db.usuarios[alvo] = criarUsuarioPadrao();
-            db.usuarios[alvo].golds = Math.max(0, (db.usuarios[alvo].golds || 0) - quantia);
+            if (!db.usuarios[alvoRem]) db.usuarios[alvoRem] = criarUsuarioPadrao();
+            db.usuarios[alvoRem].golds = Math.max(0, db.usuarios[alvoRem].golds - quantiaRem);
             salvarDB(db);
-            await sock.sendMessage(from, { text: `📉 Removidas *${quantia} 🪙* da conta de @${alvo.split('@')[0]}.`, mentions: [alvo] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `📉 *MULTA APLICADA:* Removidas *${quantiaRem} Moedas* da conta do infrator.` }, { quoted: msg });
             break;
         }
 
         case 'limpardb': {
             db.usuarios = {};
             salvarDB(db);
-            await sock.sendMessage(from, { text: "🚨 *RESET GLOBAL:* Todas as carteiras foram zeradas." }, { quoted: msg });
+            await sock.sendMessage(from, { text: "🚨 *RESET GLOBAL:* Todo o banco de dados econômico foi apagado. Todos voltaram a ter 0 Moedas 🪙." }, { quoted: msg });
             break;
         }
 
         case 'setfoto': {
-            // Primeiro tenta extrair imagem de uma mensagem respondida
-            const quotedMsg = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-            if (quotedMsg?.imageMessage) {
+            // v2: aceita responder a uma imagem, além do !setfoto [URL] de sempre.
+            const ctxFoto = msg.message.extendedTextMessage?.contextInfo;
+            const imagemCitada = ctxFoto?.quotedMessage?.imageMessage;
+
+            if (imagemCitada) {
                 try {
-                    const stream = await downloadContentFromMessage(quotedMsg.imageMessage, 'image');
-                    let buffer = Buffer.from([]);
-                    for await (const chunk of stream) {
-                        buffer = Buffer.concat([buffer, chunk]);
-                    }
-                    // Salva no volume persistente ou caminho local; como fallback, armazena base64 no config
-                    // Para simplicidade, vamos converter para base64 e salvar no db.config_bot.url_foto_menu como data URL
-                    const base64 = buffer.toString('base64');
-                    db.config_bot.url_foto_menu = `data:image/jpeg;base64,${base64}`;
+                    const mensagemFalsa = {
+                        key: {
+                            remoteJid: from,
+                            id: ctxFoto.stanzaId,
+                            participant: ctxFoto.participant
+                        },
+                        message: ctxFoto.quotedMessage
+                    };
+                    const bufferFoto = await downloadMediaMessage(mensagemFalsa, 'buffer', {});
+                    db.config_bot.foto_menu_base64 = bufferFoto.toString('base64');
+                    db.config_bot.url_foto_menu = null;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: "🖼️ Foto do menu alterada com sucesso (via imagem respondida)!" }, { quoted: msg });
-                    return;
+                    return sock.sendMessage(from, { text: "🖼️ A foto oficial do !menu foi atualizada com a imagem que você respondeu! 🌊" }, { quoted: msg });
                 } catch (e) {
-                    console.error('[setfoto] Erro ao processar imagem:', e);
-                    // falha, continua para tentar URL
+                    console.error('[SETFOTO] Erro ao baixar imagem citada:', e.message);
+                    return sock.sendMessage(from, { text: "❌ Não consegui baixar essa imagem. Tente enviar o link direto: `!setfoto [URL]`" }, { quoted: msg });
                 }
             }
 
-            // Fallback: URL fornecida como argumento
-            const url = args.join(" ");
-            if (!url) return sock.sendMessage(from, { text: "❌ Responda a uma imagem com `!setfoto` ou forneça uma URL." }, { quoted: msg });
-            db.config_bot.url_foto_menu = url;
+            if (!args[0]) return sock.sendMessage(from, { text: "❌ Envie o link da imagem (URL) ou responda a uma imagem com *!setfoto*." }, { quoted: msg });
+            db.config_bot.url_foto_menu = args[0];
+            db.config_bot.foto_menu_base64 = null;
             salvarDB(db);
-            await sock.sendMessage(from, { text: "🖼️ Foto do menu atualizada via URL." }, { quoted: msg });
+            await sock.sendMessage(from, { text: "🖼️ A foto oficial do comando *!menu* foi alterada com sucesso!" }, { quoted: msg });
             break;
         }
 
@@ -304,12 +249,12 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             if (!args[0]) return sock.sendMessage(from, { text: "❌ Digite o novo nome do bot." }, { quoted: msg });
             db.config_bot.nome_bot = args.join(" ");
             salvarDB(db);
-            await sock.sendMessage(from, { text: `🤖 Meu nome interno agora é *${args.join(" ")}*.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🤖 Meu nome interno foi alterado para *${args.join(" ")}*!` }, { quoted: msg });
             break;
         }
 
         case 'transmitir': {
-            if (!args[0]) return sock.sendMessage(from, { text: "❌ Digite o texto da transmissão." }, { quoted: msg });
+            if (!args[0]) return sock.sendMessage(from, { text: "❌ Digite o texto da transmissão global." }, { quoted: msg });
             const textoTransmissao = `📢 *TRANSMISSÃO OFICIAL DE OLDEN:*\n\n${args.join(" ")}`;
             const gruposConhecidos = Object.keys(db.grupos || {});
             let enviadosOk = 0;
@@ -317,14 +262,14 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 try {
                     await sock.sendMessage(grupoId, { text: textoTransmissao });
                     enviadosOk++;
-                } catch (e) { /* ignora */ }
+                } catch (e) { /* ignora grupo indisponível e segue para o próximo */ }
             }
-            await sock.sendMessage(from, { text: `📢 Transmissão enviada para *${enviadosOk}* de *${gruposConhecidos.length}* grupo(s).` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `📢 Transmissão enviada com sucesso para *${enviadosOk}* de *${gruposConhecidos.length}* grupo(s) conhecido(s)!` }, { quoted: msg });
             break;
         }
 
         case 'reiniciar': {
-            await sock.sendMessage(from, { text: "🔄 Reiniciando o servidor... Volto em alguns segundos!" }, { quoted: msg });
+            await sock.sendMessage(from, { text: "🔄 Reiniciando containers e limpando buffers no Railway... Volto em 5 segundos!" }, { quoted: msg });
             process.exit(0);
             break;
         }
@@ -332,14 +277,109 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         case 'desligar': {
             db.config_bot.pausado = true;
             salvarDB(db);
-            await sock.sendMessage(from, { text: "💤 Bot pausado! Comandos normais serão ignorados até `!ligar`." }, { quoted: msg });
+            await sock.sendMessage(from, { text: "💤 Bot pausado! Vou ignorar comandos normais até você mandar *!ligar*." }, { quoted: msg });
             break;
         }
 
         case 'ligar': {
             db.config_bot.pausado = false;
             salvarDB(db);
-            await sock.sendMessage(from, { text: "🔌 Bot reativado! Todos os sistemas operando. 🌊" }, { quoted: msg });
+            await sock.sendMessage(from, { text: "🔌 Bot reativado! Todos os sistemas operando normalmente. 🌊" }, { quoted: msg });
+            break;
+        }
+
+        case 'ping': {
+            const inicioPing = Date.now();
+            const usoMemoria = process.memoryUsage();
+            const ramUsadaMB = (usoMemoria.rss / 1024 / 1024).toFixed(1);
+            const uptimeSegundos = process.uptime();
+            const horasUp = Math.floor(uptimeSegundos / 3600);
+            const minutosUp = Math.floor((uptimeSegundos % 3600) / 60);
+            let cargaCpuTexto = "N/D";
+            try {
+                cargaCpuTexto = require('os').loadavg()[0].toFixed(2);
+            } catch (e) { /* loadavg pode não existir em alguns ambientes */ }
+
+            const latenciaMs = Date.now() - inicioPing;
+            const textoPing = `🏓 *PONG!* (${latenciaMs}ms de processamento)\n\n🕐 Uptime: *${horasUp}h ${minutosUp}m*\n💾 RAM em uso: *${ramUsadaMB} MB*\n⚙️ Carga de CPU (1min): *${cargaCpuTexto}*`;
+            await sock.sendMessage(from, { text: textoPing }, { quoted: msg });
+            break;
+        }
+
+        case 'backup': {
+            try {
+                const jsonStr = JSON.stringify(db, null, 2);
+                const bufferBackup = Buffer.from(jsonStr, 'utf-8');
+                const nomeArquivo = `backup-leicybot-${new Date().toISOString().slice(0, 10)}.json`;
+                await sock.sendMessage(sender, { document: bufferBackup, fileName: nomeArquivo, mimetype: 'application/json' });
+                if (from !== sender) {
+                    await sock.sendMessage(from, { text: "📦 Backup do database.json enviado no seu privado! 🌊" }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(from, { text: "📦 Backup do database.json enviado acima! 🌊" }, { quoted: msg });
+                }
+            } catch (e) {
+                console.error('[BACKUP] Erro ao enviar backup:', e.message);
+                await sock.sendMessage(from, { text: "❌ Não consegui gerar/enviar o backup. Verifique os logs do servidor." }, { quoted: msg });
+            }
+            break;
+        }
+
+        case 'listagrupos': {
+            const gruposDb = Object.keys(db.grupos || {});
+            if (gruposDb.length === 0) return sock.sendMessage(from, { text: "📋 Nenhum grupo conhecido registrado ainda." }, { quoted: msg });
+
+            let textoGrupos = `📋 *GRUPOS CONHECIDOS (${gruposDb.length}):*\n\n`;
+            for (const idGrupo of gruposDb) {
+                try {
+                    const metaGrupo = await sock.groupMetadata(idGrupo);
+                    textoGrupos += ` • ${metaGrupo.subject} (${metaGrupo.participants.length} membros)\n`;
+                } catch (e) {
+                    textoGrupos += ` • [grupo inacessível: ${idGrupo.split('@')[0]}]\n`;
+                }
+            }
+            await sock.sendMessage(from, { text: textoGrupos }, { quoted: msg });
+            break;
+        }
+
+        case 'estatisticas': {
+            const totalUsuarios = Object.keys(db.usuarios || {}).length;
+            const totalGrupos = Object.keys(db.grupos || {}).length;
+            const totalGoldsCirculando = Object.values(db.usuarios || {}).reduce((soma, u2) => soma + (u2.golds || 0) + (u2.banco || 0), 0);
+            const usuariosComTitulo = Object.values(db.usuarios || {}).filter(u2 => u2.titulo_comprado || u2.titulo_especial).length;
+            const uptimeSegundos = process.uptime();
+            const horasUp = Math.floor(uptimeSegundos / 3600);
+            const minutosUp = Math.floor((uptimeSegundos % 3600) / 60);
+
+            const textoStats = `📊 *ESTATÍSTICAS GERAIS DO LEICYBOT*\n\n👥 Usuários registrados: *${totalUsuarios}*\n💬 Grupos conhecidos: *${totalGrupos}*\n🪙 Golds em circulação (mãos + banco): *${totalGoldsCirculando}*\n👑 Usuários com título ativo: *${usuariosComTitulo}*\n🕐 Uptime atual: *${horasUp}h ${minutosUp}m*`;
+            await sock.sendMessage(from, { text: textoStats }, { quoted: msg });
+            break;
+        }
+
+        case 'migrarv2': {
+            const ID_EXEMPLO_MIG = 'exemplo_modelo_usuario@s.whatsapp.net';
+            let usuariosMigrados = 0;
+            let titulosMigrados = 0;
+            for (const idUsuario of Object.keys(db.usuarios)) {
+                if (idUsuario === ID_EXEMPLO_MIG) continue;
+                const usr = db.usuarios[idUsuario];
+
+                usr.golds = 0;
+                usuariosMigrados++;
+
+                if (!usr.titulo_comprado) {
+                    if (usr.titulo_1) {
+                        usr.titulo_comprado = usr.titulo_1;
+                        titulosMigrados++;
+                    } else if (usr.titulo_2) {
+                        usr.titulo_comprado = usr.titulo_2;
+                        titulosMigrados++;
+                    }
+                }
+                delete usr.titulo_1;
+                delete usr.titulo_2;
+            }
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `🔧 *MIGRAÇÃO V2 CONCLUÍDA:*\n\n👥 Usuários processados: *${usuariosMigrados}*\n👑 Títulos migrados pro slot único: *${titulosMigrados}*\n🪙 Todos os saldos em mãos foram zerados (o banco não foi mexido).\n\n⚠️ Rode esse comando *só uma vez*. Rodar de novo vai zerar os golds outra vez!` }, { quoted: msg });
             break;
         }
 
