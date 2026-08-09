@@ -1,7 +1,7 @@
 {
   "usuarios": {
     "exemplo_modelo_usuario@s.whatsapp.net": {
-      "golds": 0,
+      "golds": 100,
       "banco": 0,
       "mensagens_contadas": 0,
       "ultimo_mensagem_data": "",
