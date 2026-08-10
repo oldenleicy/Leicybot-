@@ -212,7 +212,16 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
         }
 
         case 'setfoto': {
-            // v2: aceita responder a uma imagem, além do !setfoto [URL] de sempre.
+            // v2: "!setfoto padrao" limpa qualquer override salvo (URL ou base64),
+            // devolvendo o controle pro arquivo local em assets/.
+            if (args[0]?.toLowerCase() === 'padrao') {
+                db.config_bot.url_foto_menu = null;
+                db.config_bot.foto_menu_base64 = null;
+                salvarDB(db);
+                return sock.sendMessage(from, { text: "🖼️ Removido o override salvo — o !menu volta a usar o arquivo local de assets/foto-menu.* (ou a imagem de segurança, se esse arquivo não existir)." }, { quoted: msg });
+            }
+
+            // aceita responder a uma imagem, além do !setfoto [URL] de sempre.
             const ctxFoto = msg.message.extendedTextMessage?.contextInfo;
             const imagemCitada = ctxFoto?.quotedMessage?.imageMessage;
 
@@ -352,6 +361,56 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
             const textoStats = `📊 *ESTATÍSTICAS GERAIS DO LEICYBOT*\n\n👥 Usuários registrados: *${totalUsuarios}*\n💬 Grupos conhecidos: *${totalGrupos}*\n🪙 Golds em circulação (mãos + banco): *${totalGoldsCirculando}*\n👑 Usuários com título ativo: *${usuariosComTitulo}*\n🕐 Uptime atual: *${horasUp}h ${minutosUp}m*`;
             await sock.sendMessage(from, { text: textoStats }, { quoted: msg });
+            break;
+        }
+
+        case 'mesclarusuario': {
+            // Corrige registros fantasma: quando a mesma pessoa acabou tendo 2
+            // entradas em db.usuarios (normalmente por ter usado o bot antes da
+            // correção de identidade da v2, ou por causa de @lid). Soma tudo do
+            // ID duplicado no ID principal e apaga o duplicado.
+            const bruto1 = args[0];
+            const bruto2 = args[1];
+            if (!bruto1 || !bruto2) {
+                return sock.sendMessage(from, { text: "❌ Uso: *!mesclarusuario [id_principal] [id_duplicado]*\n\n👉 Pode ser o número puro (ex: 258877080511) ou o JID completo (ex: 258877080511@s.whatsapp.net ou algo@lid). Use *!backup* e procure no database.json pra achar o ID exato do registro duplicado." }, { quoted: msg });
+            }
+
+            const normalizarEntrada = (v) => v.includes('@') ? v : v.replace(/\D/g, '') + '@s.whatsapp.net';
+            const idPrincipal = normalizarEntrada(bruto1);
+            const idDuplicado = normalizarEntrada(bruto2);
+
+            if (idPrincipal === idDuplicado) {
+                return sock.sendMessage(from, { text: "❌ Os dois IDs são iguais, não há o que mesclar." }, { quoted: msg });
+            }
+            if (!db.usuarios[idDuplicado]) {
+                return sock.sendMessage(from, { text: `❌ Não encontrei nenhum registro pra *${idDuplicado}*.` }, { quoted: msg });
+            }
+            if (!db.usuarios[idPrincipal]) db.usuarios[idPrincipal] = criarUsuarioPadrao();
+
+            const principal = db.usuarios[idPrincipal];
+            const duplicado = db.usuarios[idDuplicado];
+
+            principal.golds = (principal.golds || 0) + (duplicado.golds || 0);
+            principal.banco = (principal.banco || 0) + (duplicado.banco || 0);
+            principal.mensagens_contadas = (principal.mensagens_contadas || 0) + (duplicado.mensagens_contadas || 0);
+            principal.ultima_interacao = Math.max(principal.ultima_interacao || 0, duplicado.ultima_interacao || 0);
+            principal.beijados = (principal.beijados || 0) + (duplicado.beijados || 0);
+            principal.abracados = (principal.abracados || 0) + (duplicado.abracados || 0);
+            if (!principal.titulo_comprado && duplicado.titulo_comprado) {
+                principal.titulo_comprado = duplicado.titulo_comprado;
+                principal.data_expiracao = duplicado.data_expiracao;
+            }
+            if (!principal.titulo_especial && duplicado.titulo_especial) {
+                principal.titulo_especial = duplicado.titulo_especial;
+            }
+            principal.historico_roubos = [...(principal.historico_roubos || []), ...(duplicado.historico_roubos || [])];
+            principal.emprestimos_feitos = [...(principal.emprestimos_feitos || []), ...(duplicado.emprestimos_feitos || [])];
+            principal.emprestimos_recebidos = [...(principal.emprestimos_recebidos || []), ...(duplicado.emprestimos_recebidos || [])];
+
+            delete db.usuarios[idDuplicado];
+            salvarDB(db);
+
+            await sock.sendMessage(from, { text: `🔧 *MESCLAGEM CONCLUÍDA:*\n\n✅ Golds, banco, títulos e histórico de *${idDuplicado}* foram somados/transferidos para *${idPrincipal}*.\n🗑️ O registro duplicado foi apagado.\n\n⚠️ Isso só mexe no banco de dados do bot — não afeta o contato/conversa no WhatsApp de verdade.` }, { quoted: msg });
             break;
         }
 

@@ -219,6 +219,14 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
         }
 
+        // v2: ranking social — ainda em construção, chega numa próxima atualização
+        case 'topbeijos':
+        case 'topabracos':
+        case 'casaldomes': {
+            await sock.sendMessage(from, { text: `🚧 *!${comando}* ainda está em construção — chega numa próxima atualização! 🌊` }, { quoted: msg });
+            break;
+        }
+
         default:
             break;
     }

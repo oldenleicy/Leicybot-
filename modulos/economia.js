@@ -572,17 +572,41 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
             case 'rankgold': {
                 const ID_EXEMPLO = 'exemplo_modelo_usuario@s.whatsapp.net';
+
+                // v2 (correção de bug): antes rankeava TODO db.usuarios, incluindo
+                // gente de OUTROS grupos onde o bot também está — agora escopa só
+                // pra quem está de fato neste grupo. Inclui identificadores
+                // alternativos de cada participante pra não perder ninguém por
+                // causa de @lid vs número normal.
+                let idsValidosGrupo = null;
+                try {
+                    const metaRank = await sock.groupMetadata(from);
+                    idsValidosGrupo = new Set();
+                    metaRank.participants.forEach(p => {
+                        idsValidosGrupo.add(p.id);
+                        const altId = p.phoneNumber || p.pn || p.jid;
+                        if (altId) idsValidosGrupo.add(altId);
+                    });
+                } catch (e) {
+                    // provavelmente rodado em DM — cai de volta pro ranking global
+                }
+
                 let ordenados = Object.keys(db.usuarios)
                     .filter(id => id !== ID_EXEMPLO)
+                    .filter(id => !idsValidosGrupo || idsValidosGrupo.has(id))
                     .map(id => ({ id, total: (db.usuarios[id].golds || 0) + (db.usuarios[id].banco || 0) }))
                     .sort((a, b) => b.total - a.total)
                     .slice(0, 10);
 
                 let rankTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██  🪙  𝗧𝗢𝗣 𝟭𝟬 - 𝗠𝗔𝗚𝗡𝗔𝗧𝗔𝗦 𝗗𝗢 𝗚𝗥𝗨𝗣𝗢  🪙  ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 Maiores economias sob a supervisão de Olden:\n\n`;
                 const medalhas = ["🥇", "🥈", "🥉", "💧", "💧", "💧", "💧", "💧", "💧", "💧"];
-                ordenados.forEach((m, idx) => {
-                    rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 🪙 *${m.total} Golds*\n`;
-                });
+                if (ordenados.length === 0) {
+                    rankTxt += " Ninguém desse grupo tem Golds registrados ainda.\n";
+                } else {
+                    ordenados.forEach((m, idx) => {
+                        rankTxt += ` ${medalhas[idx]} *${idx + 1}º Lugar:* @${m.id.split('@')[0]} ➔ 🪙 *${m.total} Golds*\n`;
+                    });
+                }
                 rankTxt += `\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: rankTxt, mentions: ordenados.map(m => m.id) }, { quoted: msg });
                 break;
