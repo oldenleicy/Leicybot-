@@ -1,5 +1,6 @@
 // comandos.js
 const path = require('path');
+const fs = require('fs');
 const ajudaTextos = require('./ajuda_textos');
 const interacaoTextos = require('./interacao_textos');
 const criarUsuarioPadrao = require('./modulos/usuarioPadrao');
@@ -12,6 +13,7 @@ const admModulo = require('./modulos/adm');
 const diversaoModulo = require('./modulos/diversao');
 const midiaModulo = require('./modulos/midia');
 const outrosModulo = require('./modulos/outros');
+const jogosModulo = require('./modulos/jogos');
 
 const DONO_OFICIAL = '258877080511@s.whatsapp.net';
 
@@ -56,7 +58,7 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         if (!db.config_bot) {
             db.config_bot = {
                 nome_bot: "LeicyBot",
-                url_foto_menu: "https://i.imgur.com/Kdf946S.png",
+                url_foto_menu: null, // v2: sem URL fixa por padrão — deixa o arquivo local em assets/ ser o padrão de fábrica
                 manutencao: false,
                 pausado: false,
                 comandos_desativados: [],
@@ -235,6 +237,16 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
                 }
             }
 
+            // v2: !30s — durante uma rodada ativa, qualquer mensagem de texto no
+            // grupo pode ser um palpite da equipe que está adivinhando. Preciso
+            // checar isso ANTES do resto do fluxo (bônus/anúncio), mas sem
+            // atrapalhar mensagens normais — só intercepta de verdade quando o
+            // palpite bate com a palavra secreta da rodada.
+            if (isGroup) {
+                const acertou30s = await jogosModulo.verificarPalpite30s(sock, msg, db, salvarDB, from, sender, corpoMensagem);
+                if (acertou30s) return;
+            }
+
             // Bônus diário automático — primeira mensagem do dia que NÃO é comando
             const hojeDataBonus = new Date().toLocaleDateString();
             if (u.ultimo_bonus_diario !== hojeDataBonus) {
@@ -286,11 +298,29 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
 
         // !menu / !help
         if (comandoUnico === 'menu' || comandoUnico === 'help') {
-            // v2: !setfoto por resposta a imagem salva em base64 (db.config_bot.foto_menu_base64),
-            // que tem prioridade sobre a URL clássica quando estiver definida.
-            const fonteFoto = db.config_bot.foto_menu_base64
-                ? Buffer.from(db.config_bot.foto_menu_base64, 'base64')
-                : { url: db.config_bot.url_foto_menu || "https://i.imgur.com/Kdf946S.png" };
+            // v2: ordem de prioridade da foto do !menu —
+            // 1) foto_menu_base64 (setfoto por resposta a imagem, override explícito)
+            // 2) url_foto_menu (setfoto com link, override explícito)
+            // 3) arquivo local em assets/ (o padrão "de fábrica" do seu repositório)
+            // 4) URL de segurança, caso nada acima exista/funcione
+            let fonteFoto;
+            if (db.config_bot.foto_menu_base64) {
+                fonteFoto = Buffer.from(db.config_bot.foto_menu_base64, 'base64');
+            } else if (db.config_bot.url_foto_menu) {
+                fonteFoto = { url: db.config_bot.url_foto_menu };
+            } else {
+                fonteFoto = null;
+                for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+                    const caminhoAsset = path.join(__dirname, 'assets', `foto-menu.${ext}`);
+                    if (fs.existsSync(caminhoAsset)) {
+                        try {
+                            fonteFoto = fs.readFileSync(caminhoAsset);
+                            break;
+                        } catch (e) { /* tenta a próxima extensão */ }
+                    }
+                }
+                if (!fonteFoto) fonteFoto = { url: "https://i.imgur.com/Kdf946S.png" };
+            }
             const textoMenuGeral = `░▒▓█████████████████████████████████████▓▒░\n▓██          🌊  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗠𝗘𝗡𝗨  💧         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🤖 Olá! Eu sou o Leicybot. Escolha uma das centrais de comando abaixo:\n\n🪙 *!menugold* ➔ Painel de Economia Reais, Cassino e Jogos.\n🛡️ *!menuadm* ➔ Ferramentas de Moderação e Defesa.\n🎮 *!menujogos* ➔ Jogos Sociais e Entretenimento.\n🎵 *!menumidia* ➔ Criação de Figurinhas e Letras.\n📊 *!menuoutros* ➔ Perfil Customizado e Status.\n👑 *!menudono* ➔ Títulos Especiais e Configurações de Elite.\n\n📖 *💡 DICA:* Ficou com dúvidas? Digite: *!ajuda [comando]*\n░▒▓█████████████████████████████████████▓▒░`;
 
             try {
@@ -328,11 +358,20 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
             return await executarAdm(sock, msg, comandoUnico, argumentos, db, salvarDB, possuiPermissaoComando);
         }
 
-        // DIVERSÃO ('divorciar' movido para cá — antes estava em OUTROS e nunca era executado de verdade)
-        const cmdsDiversao = ['menujogos', 'duelo', 'casar', 'aceitar', 'divorciar', 'beijar', 'bater', 'abracar', 'gado', 'gostoso', 'curiosidade'];
+        // DIVERSÃO ('divorciar' movido para cá — antes estava em OUTROS e nunca era executado de verdade;
+        // v2: + topbeijos, topabracos, casaldomes)
+        const cmdsDiversao = ['menujogos', 'duelo', 'casar', 'aceitar', 'divorciar', 'beijar', 'bater', 'abracar', 'gado', 'gostoso', 'curiosidade', 'topbeijos', 'topabracos', 'casaldomes'];
         if (cmdsDiversao.includes(comandoUnico)) {
             const executarDiversao = diversaoModulo.diversaoModulo || diversaoModulo.default || diversaoModulo;
             return await executarDiversao(sock, msg, comandoUnico, argumentos, db, salvarDB);
+        }
+
+        // JOGOS EM GRUPO (v2: forca, jogo da velha, 30 segundos, roleta russa social, enquete,
+        // + ppt, verdadeoudesafio, emojicharada, quiz, sorteio, palavraencadeada)
+        const cmdsJogos = ['forca', 'chutar', 'desistirforca', 'jogodavelha', 'aceitarvelha', 'jogar', 'desistirvelha', '30s', 'vermelha', 'azul', 'iniciar30s', 'pular', 'placar30s', 'encerrar30s', 'enquete', 'roletarussa', 'ppt', 'verdadeoudesafio', 'emojicharada', 'quiz', 'sorteio', 'participar', 'sortear', 'palavraencadeada'];
+        if (cmdsJogos.includes(comandoUnico)) {
+            const executarJogos = jogosModulo.jogosModulo || jogosModulo.default || jogosModulo;
+            return await executarJogos(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         // MÍDIA
@@ -350,7 +389,7 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         }
 
         // DONO ('ligar' adicionado como par do '!desligar'; v2: + ping, backup, listagrupos, estatisticas)
-        const cmdsDono = ['menudono', 'manutencao', 'burlar', 'desativarcmd', 'ativarcmd', 'addgold', 'remgold', 'addcelestial', 'setfoto', 'nomebot', 'limpardb', 'transmitir', 'reiniciar', 'desligar', 'ligar', 'criartitulo', 'dartitulo', 'removoertitulo', 'concederpermissao', 'ping', 'backup', 'listagrupos', 'estatisticas', 'migrarv2'];
+        const cmdsDono = ['menudono', 'manutencao', 'burlar', 'desativarcmd', 'ativarcmd', 'addgold', 'remgold', 'addcelestial', 'setfoto', 'nomebot', 'limpardb', 'transmitir', 'reiniciar', 'desligar', 'ligar', 'criartitulo', 'dartitulo', 'removoertitulo', 'concederpermissao', 'ping', 'backup', 'listagrupos', 'estatisticas', 'migrarv2', 'mesclarusuario'];
         if (cmdsDono.includes(comandoUnico)) {
             if (sender !== DONO_OFICIAL) {
                 return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Restrito ao meu criador oficial *Olden*! 👑" }, { quoted: msg });
