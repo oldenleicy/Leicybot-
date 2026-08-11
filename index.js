@@ -119,6 +119,28 @@ function salvarDB(dadosNovos) {
 // ─────────────────────────────────────────────────────────────
 
 const MEU_NUMERO_WHATSAPP = '258840504242';
+const DONO_OFICIAL = '258877080511@s.whatsapp.net'; // pra onde o backup automático da sessão é enviado
+
+// ─── BACKUP AUTOMÁTICO DE SESSÃO (v2) ───
+// Em vez de depender só do WA_SESSION_DATA colado manualmente (que fica
+// desatualizado rápido, já que as credenciais mudam com frequência), o bot
+// manda uma cópia fresca pro privado do dono periodicamente — assim sempre
+// tem um backup recente à mão sem precisar ficar de olho no log.
+let ultimoBackupEnviado = 0;
+const INTERVALO_BACKUP_MS = 20 * 60 * 1000; // 20 minutos
+
+// ─── LIMITE DE TENTATIVAS DE PAREAMENTO (v2) ───
+// Evita martelar o WhatsApp com pedidos de código repetidos (o que pode
+// causar bloqueio temporário) — para de tentar sozinho depois de N falhas
+// seguidas e exige reinício manual.
+let tentativasPareamentoSeguidas = 0;
+const MAX_TENTATIVAS_PAREAMENTO = 3;
+
+// Mesma ideia, mas pro caminho de reconexão "normal" (queda recuperável, sem
+// perder a sessão) — antes tentava de novo a cada 8s pra sempre, sem nunca
+// avisar se o motivo real persistisse por muito tempo.
+let tentativasReconexaoSeguidas = 0;
+const MAX_TENTATIVAS_RECONEXAO = 8;
 
 let statusConexao = "Iniciando aplicação...";
 let botSocket = null;
@@ -204,6 +226,23 @@ async function iniciarBot() {
                 console.log('==================================================');
                 console.log(base64String);
                 console.log('==================================================\n');
+
+                // v2: backup automático throttled pro privado do dono (no máx. 1x a
+                // cada INTERVALO_BACKUP_MS), só quando a conexão está de fato aberta.
+                if (statusConexao === "conectado" && (Date.now() - ultimoBackupEnviado) > INTERVALO_BACKUP_MS) {
+                    ultimoBackupEnviado = Date.now();
+                    try {
+                        await botSocket.sendMessage(DONO_OFICIAL, {
+                            document: Buffer.from(base64String, 'utf-8'),
+                            fileName: `wa_session_data_${new Date().toISOString().slice(0, 16).replace(':', 'h')}.txt`,
+                            mimetype: 'text/plain',
+                            caption: '🔐 Backup automático da sessão do WhatsApp. Se o bot cair e não reconectar sozinho, cole o conteúdo desse arquivo na variável WA_SESSION_DATA do Render.'
+                        });
+                        console.log('[SISTEMA] Backup de sessão enviado automaticamente pro privado do dono.');
+                    } catch (e) {
+                        console.error('[SISTEMA] Falha ao enviar backup automático de sessão:', e.message);
+                    }
+                }
             }
         } catch (e) {
             console.error('[SISTEMA] Falha ao salvar/ler credenciais:', e.message);
@@ -221,14 +260,26 @@ async function iniciarBot() {
             try {
                 console.log(`[SISTEMA] Solicitando código de pareamento seguro para: ${MEU_NUMERO_WHATSAPP}`);
                 let codigo = await botSocket.requestPairingCode(MEU_NUMERO_WHATSAPP);
+                tentativasPareamentoSeguidas = 0; // sucesso — reseta o contador de falhas
                 statusConexao = `Código gerado: ${codigo}`;
                 console.log('\n==================================================');
                 console.log(`🔑 SEU CÓDIGO DE EMPARELHAMENTO DO WHATSAPP: ${codigo}`);
                 console.log('==================================================\n');
             } catch (err) {
-                console.error('[ERRO CRÍTICO 428]: Forçando reinicialização limpa...');
+                tentativasPareamentoSeguidas++;
+                console.error(`[ERRO PAREAMENTO] Tentativa ${tentativasPareamentoSeguidas}/${MAX_TENTATIVAS_PAREAMENTO} falhou:`, err.message);
+
+                if (tentativasPareamentoSeguidas >= MAX_TENTATIVAS_PAREAMENTO) {
+                    statusConexao = `🚨 Pareamento falhou ${tentativasPareamentoSeguidas}x seguidas. Parei de tentar automaticamente pra não arriscar bloqueio do WhatsApp — reinicie manualmente pra tentar de novo.`;
+                    console.error('[SISTEMA] ' + statusConexao);
+                    limparSessaoInvalida();
+                    return; // não agenda mais nenhuma tentativa sozinho
+                }
+
+                const esperaBackoff = 10000 * tentativasPareamentoSeguidas; // 10s, 20s, 30s...
+                console.error(`[SISTEMA] Tentando de novo em ${esperaBackoff / 1000}s...`);
                 limparSessaoInvalida();
-                setTimeout(() => iniciarBot(), 5000);
+                setTimeout(() => iniciarBot(), esperaBackoff);
             }
         }, 10000);
     }
@@ -247,13 +298,25 @@ async function iniciarBot() {
             console.log(`[CONEXÃO] Detalhe do erro real:`, lastDisconnect?.error?.message || lastDisconnect?.error || '(nenhum detalhe disponível)');
 
             if ([401, 403, 405, 428, DisconnectReason.loggedOut].includes(statusCode)) {
+                console.log('[CONEXÃO] Motivo exige pareamento novo — limpando sessão local.');
+                tentativasReconexaoSeguidas = 0;
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
             } else {
-                setTimeout(() => iniciarBot(), 8000);
+                tentativasReconexaoSeguidas++;
+                if (tentativasReconexaoSeguidas > MAX_TENTATIVAS_RECONEXAO) {
+                    statusConexao = `🚨 ${tentativasReconexaoSeguidas} tentativas de reconexão seguidas falharam. Parei de tentar sozinho — dá uma olhada nos logs e reinicie manualmente.`;
+                    console.error('[SISTEMA] ' + statusConexao);
+                    return;
+                }
+                const esperaReconexao = Math.min(8000 * tentativasReconexaoSeguidas, 120000);
+                console.log(`[CONEXÃO] Motivo parece recuperável (tentativa ${tentativasReconexaoSeguidas}/${MAX_TENTATIVAS_RECONEXAO}) — reconectando em ${esperaReconexao / 1000}s...`);
+                setTimeout(() => iniciarBot(), esperaReconexao);
             }
         } else if (connection === 'open') {
             statusConexao = "conectado";
+            tentativasPareamentoSeguidas = 0;
+            tentativasReconexaoSeguidas = 0;
             console.log('🚀 [SUCESSO] Bot conectado 100% e operando sem falhas!');
         }
     });
