@@ -32,7 +32,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
     switch (comando) {
         case 'menudono': {
-            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!reiniciar* ➔ Reiniciar buffers e contêineres do Railway.\n🔹 *!desligar / !ligar* ➔ Pausa ou retoma o processamento de comandos.\n🔹 *!ping* ➔ Uptime, RAM e carga do servidor.\n🔹 *!backup* ➔ Envia o database.json atual no seu privado.\n🔹 *!listagrupos* ➔ Lista os grupos onde estou presente.\n🔹 *!estatisticas* ➔ Números gerais do bot.\n🔹 *!migrarv2* ➔ Rodar 1x só, depois de atualizar pra v2 (reset de golds + migração de títulos).\n\n🌟 *👑 CONTROLE DE TÍTULOS E PERMISSÕES DE ELITE:*\n🔹 *!criartitulo [nome]* ➔ Registra um novo título no sistema do bot.\n🔹 *!dartitulo [@membro ou responda] [nome]* ➔ Concede um título (com anúncio se for especial).\n🔹 *!addcelestial [@membro ou responda]* ➔ Atalho para dar o título especial Celestial direto.\n🔹 *!removoertitulo [@membro ou responda] [nome]* ➔ Retira um título de um usuário.\n🔹 *!concederpermissao [@membro ou responda] [cmd]* ➔ Dá acesso a comandos ADM para não-adms.\n\n💰 *🪙 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro/número/responda] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro ou responda] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Moedas.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto [URL]* ou responda uma imagem com *!setfoto* ➔ Modificar a imagem oficial do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n🔹 *!transmitir [texto]* ➔ Envia um aviso para todos os grupos conhecidos.\n░▒▓█████████████████████████████████████▓▒░`;
+            const textoMenuDono = `░▒▓█████████████████████████████████████▓▒░\n👑  𝗣𝗔𝗜𝗡𝗘𝗟 𝗦𝗨𝗣𝗥𝗘𝗠𝗢 𝗗𝗢 𝗗𝗘𝗦𝗘𝗡𝗩𝗢𝗟𝗩𝗘𝗗𝗢𝗥  👑\n░▒▓█████████████████████████████████████▓▒░\n\n⚙️ Olá Chefe *Olden*! Aqui estão as ferramentas de controle absoluto do Leicybot:\n\n💻 *⚙️ SISTEMA & MANUTENÇÃO:*\n🔹 *!manutencao on/off* ➔ Ativa ou desativa o modo manutenção global.\n🔹 *!desativarcmd [nome]* ➔ Banir um comando específico do bot.\n🔹 *!ativarcmd [nome]* ➔ Reativar um comando removido.\n🔹 *!reiniciar* ➔ Reiniciar buffers e contêineres do Railway.\n🔹 *!desligar / !ligar* ➔ Pausa ou retoma o processamento de comandos.\n🔹 *!ping* ➔ Uptime, RAM e carga do servidor.\n🔹 *!backup* ➔ Envia o database.json atual no seu privado.\n🔹 *!listagrupos* ➔ Lista os grupos onde estou presente.\n🔹 *!estatisticas* ➔ Números gerais do bot.\n🔹 *!migrarv2* ➔ Rodar 1x só, depois de atualizar pra v2 (reset de golds + migração de títulos).\n\n🌟 *👑 CONTROLE DE TÍTULOS E PERMISSÕES DE ELITE:*\n🔹 *!criartitulo [nome]* ➔ Registra um novo título no sistema do bot.\n🔹 *!dartitulo [@membro ou responda] [nome]* ➔ Concede um título (com anúncio se for especial).\n🔹 *!addcelestial [@membro ou responda]* ➔ Atalho para dar o título especial Celestial direto.\n🔹 *!removoertitulo [@membro ou responda] [nome]* ➔ Retira um título de um usuário.\n🔹 *!concederpermissao [@membro ou responda] [cmd]* ➔ Dá acesso a comandos ADM para não-adms (só no grupo atual).\n🔹 *!removerpermissao [@membro ou responda] [cmd]* ➔ Revoga um acesso concedido antes.\n\n💰 *🪙 CONTROLE ECONÔMICO:*\n🔹 *!addgold [@membro/número/responda] [quantia]* ➔ Injetar saldo na conta de alguém.\n🔹 *!remgold [@membro ou responda] [quantia]* ➔ Aplicar multa e reter dinheiro.\n🔹 *!limpardb* ➔ Reset geral de todas as carteiras de Moedas.\n\n🎨 *🖼️ ESTÉTICA INTERNA:*\n🔹 *!setfoto [URL]* ou responda uma imagem com *!setfoto* ➔ Modificar a imagem oficial do menu principal.\n🔹 *!nomebot [texto]* ➔ Mudar a alcunha do bot.\n🔹 *!transmitir [texto]* ➔ Envia um aviso para todos os grupos conhecidos.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: textoMenuDono }, { quoted: msg });
             break;
         }
@@ -130,13 +130,34 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             }
 
             if (!db.usuarios[alvoPerm]) db.usuarios[alvoPerm] = criarUsuarioPadrao();
-            if (!db.usuarios[alvoPerm].permissoes_especiais) db.usuarios[alvoPerm].permissoes_especiais = [];
+            if (!db.usuarios[alvoPerm].permissoes_por_grupo) db.usuarios[alvoPerm].permissoes_por_grupo = {};
+            if (!db.usuarios[alvoPerm].permissoes_por_grupo[from]) db.usuarios[alvoPerm].permissoes_por_grupo[from] = [];
 
-            if (!db.usuarios[alvoPerm].permissoes_especiais.includes(cmdPerm)) {
-                db.usuarios[alvoPerm].permissoes_especiais.push(cmdPerm);
+            if (!db.usuarios[alvoPerm].permissoes_por_grupo[from].includes(cmdPerm)) {
+                db.usuarios[alvoPerm].permissoes_por_grupo[from].push(cmdPerm);
                 salvarDB(db);
             }
-            await sock.sendMessage(from, { text: `🔑 *PERMISSÃO ESPECÍFICA CONCEDIDA:* O usuário @${alvoPerm.split('@')[0]} agora possui autoridade para executar o comando *!${cmdPerm}* mesmo sem ser Administrador do grupo!`, mentions: [alvoPerm] }, { quoted: msg });
+            await sock.sendMessage(from, { text: `🔑 *PERMISSÃO ESPECÍFICA CONCEDIDA:* O usuário @${alvoPerm.split('@')[0]} agora possui autoridade para executar o comando *!${cmdPerm}* mesmo sem ser Administrador — válido só NESTE grupo!`, mentions: [alvoPerm] }, { quoted: msg });
+            break;
+        }
+
+        case 'removerpermissao': {
+            const teveMencaoRemPerm = temMencaoExplicita(msg);
+            const alvoRemPerm = obterAlvo(msg);
+            const cmdRemPerm = (teveMencaoRemPerm ? args[1] : args[0]) ? (teveMencaoRemPerm ? args[1] : args[0]).toLowerCase().replace('!', '') : null;
+
+            if (!alvoRemPerm || !cmdRemPerm) {
+                return sock.sendMessage(from, { text: "❌ Uso correto: *!removerpermissao [@membro ou responda] [nome_do_comando]*" }, { quoted: msg });
+            }
+
+            const listaPerm = db.usuarios[alvoRemPerm]?.permissoes_por_grupo?.[from];
+            if (!listaPerm || !listaPerm.includes(cmdRemPerm)) {
+                return sock.sendMessage(from, { text: `❌ @${alvoRemPerm.split('@')[0]} não tem a permissão *!${cmdRemPerm}* concedida neste grupo.`, mentions: [alvoRemPerm] }, { quoted: msg });
+            }
+
+            db.usuarios[alvoRemPerm].permissoes_por_grupo[from] = listaPerm.filter(c => c !== cmdRemPerm);
+            salvarDB(db);
+            await sock.sendMessage(from, { text: `🔒 *PERMISSÃO REVOGADA:* @${alvoRemPerm.split('@')[0]} perdeu o acesso especial ao comando *!${cmdRemPerm}* neste grupo.`, mentions: [alvoRemPerm] }, { quoted: msg });
             break;
         }
 

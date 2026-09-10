@@ -4,6 +4,26 @@
 // telefone (<numero>@s.whatsapp.net). Isso é uma mudança da própria
 // plataforma WhatsApp (privacidade de número), não um bug do bot — mas
 // quebra qualquer comparação feita contra um número fixo (ex: DONO_OFICIAL).
+// Entrega 3 (v2) adiciona um cache @lid → número real (ver
+// cacheAlternativoPorLid abaixo) que reduz esse problema também para
+// quem é ALVO (mencionado ou respondido), não só para quem envia.
+
+// ══════════════════════════════════════════════════════════════════
+// Cache de identidade @lid → número real (Entrega 3).
+// Populado sozinho, sem precisar mexer em mais nenhum arquivo: toda vez
+// que resolverIdentidade recebe um @lid que já vem com o "JID
+// alternativo" (participantAlt/participantPn) exposto pelo Baileys, a
+// tradução é gravada aqui. Como resolverIdentidade roda no topo de todo
+// módulo em toda mensagem processada (incluindo o comandos.js central),
+// o cache vai se populando organicamente conforme cada @lid do grupo vai
+// mandando mensagem. Isso é o que permite limparJid/obterAlvo resolverem
+// um @lid mesmo quando ele é só o ALVO (mencionado ou respondido) — caso
+// em que o Baileys não expõe o JID alternativo na mensagem atual (ver
+// aviso em obterAlvo, abaixo).
+// Só em memória, mesmo padrão do mensagensRecentesPorUsuario logo mais
+// embaixo: reinicia com o bot, sem persistência no database.json.
+// ══════════════════════════════════════════════════════════════════
+const cacheAlternativoPorLid = new Map(); // @lid -> número real (@s.whatsapp.net)
 
 function resolverIdentidade(msgKey) {
     let participante = msgKey.participant || msgKey.remoteJid;
@@ -18,6 +38,7 @@ function resolverIdentidade(msgKey) {
         if (alternativo) {
             let alt = alternativo;
             if (alt.includes(':')) alt = alt.split(':')[0] + '@s.whatsapp.net';
+            cacheAlternativoPorLid.set(participante, alt);
             return alt;
         }
     }
@@ -35,9 +56,15 @@ function participanteBruto(msgKey) {
 
 // Normaliza um JID solto (tira o sufixo ":xx" de dispositivo, se houver),
 // igual ao tratamento que já era feito manualmente em cada comando.
+// Entrega 3: se o resultado ainda terminar em @lid, consulta o cache
+// populado por resolverIdentidade antes de devolver o valor bruto.
 function limparJid(jid) {
     if (!jid) return jid;
     if (jid.includes(':')) jid = jid.split(':')[0] + '@s.whatsapp.net';
+    if (jid.endsWith('@lid')) {
+        const alternativoEmCache = cacheAlternativoPorLid.get(jid);
+        if (alternativoEmCache) return alternativoEmCache;
+    }
     return jid;
 }
 
@@ -59,12 +86,15 @@ function obterContextInfo(msg) {
 // autor da mensagem citada como alvo.
 // Retorna o JID do alvo, ou null se não achou nenhum dos dois.
 //
-// ⚠️ Limitação conhecida: se o autor da mensagem citada estiver mascarado
-// como @lid, não existe (no Baileys atual) um "JID alternativo" exposto
-// pra esse participante citado — só existe pra quem está mandando a
-// mensagem atual (participantAlt/participantPn, ver resolverIdentidade
-// acima). Ou seja, responder a alguém em @lid pode retornar o @lid bruto
-// em vez do número de telefone real.
+// ⚠️ Limitação conhecida (reduzida pela Entrega 3, não eliminada): se o
+// autor da mensagem citada estiver mascarado como @lid, o Baileys atual
+// não expõe um "JID alternativo" pra esse participante citado dentro da
+// mensagem atual — só pra quem está mandando a mensagem atual
+// (participantAlt/participantPn, ver resolverIdentidade acima). limparJid
+// agora consulta o cacheAlternativoPorLid antes de devolver o valor
+// bruto, então se esse @lid já mandou alguma mensagem no grupo desde que
+// o bot está no ar, o cache resolve. Só continua caindo no @lid bruto se
+// a pessoa citada nunca mandou mensagem (cache ainda vazio pra ela).
 function obterAlvo(msg) {
     const ctx = obterContextInfo(msg);
     if (!ctx) return null;

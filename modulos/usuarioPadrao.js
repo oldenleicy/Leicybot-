@@ -15,6 +15,8 @@ module.exports = function criarUsuarioPadrao() {
         raspadinhas_hoje: 0,
         ultimo_mensagem_data: "",   // data (string) usada pra resetar os contadores diários acima
         ultimo_bonus_diario: "",    // idem, pro bônus diário automático de +20 golds
+        ultimo_assalto: null,       // timestamp — cooldown de 12h do !assaltar
+        ultimo_roubo: null,         // timestamp — cooldown de 12h do !roubar
 
         // Itens da loja (v2)
         escudo: false,              // bloqueia 100% de 1 !assaltar, quebra depois do uso
@@ -24,6 +26,13 @@ module.exports = function criarUsuarioPadrao() {
         sorte_grande_jogadas: 0,    // fichas restantes do bônus de chance em roleta/slots/dados
 
         investimento: null,         // { valor, criado_em, resgatavel_em, bonus_pct } — !investir / !resgatar
+
+        // Treino / habilidades pro !duelo (Entrega 13)
+        // Checagem é lazy (Date.now()), mesmo padrão do investimento — sem cron.
+        // Tabela de preços/tempos/bônus vive em modulos/economia.js (TREINOS).
+        treinos_em_andamento: [],   // até 3 ao mesmo tempo — [{ tipo: 'marujo'|'corsario'|'kraken', pronto_em }]
+                                     // quando Date.now() >= pronto_em, o treino vira habilidade ativa automaticamente
+        habilidades_ativas: [],     // [{ tipo, bonus_pct, expira_em }] — somadas no !duelo, removidas quando expiram
 
         historico_roubos: [],       // [{ atacante, tipo: 'carteira'|'banco', sucesso, timestamp }]
         emprestimos_feitos: [],     // [{ devedor, valor, timestamp }]   — golds que emprestou (quem te deve)
@@ -49,11 +58,11 @@ module.exports = function criarUsuarioPadrao() {
         beijados: 0,
         abracados: 0,
 
-        // ── Moderação ─────────────────────────────────────────────
-        advertencias: [],
-        permissoes_especiais: [],
-        mutado_ate: null,           // timestamp — !mutar
-        historico_mensagens: [],    // timestamps recentes, usado pelo !antiflood
-        ultima_mensagem_slow: null  // timestamp, usado pelo !modolento
+        // ── Moderação (v2 — por grupo, não mais global) ──────────────
+        // Antes mutado_ate/advertencias/etc. valiam pro usuário em QUALQUER
+        // grupo ao mesmo tempo — um mute num grupo silenciava em todos.
+        // Agora cada grupo tem seu próprio sub-objeto independente.
+        moderacao_por_grupo: {},    // { [jidGrupo]: { mutado_ate, historico_mensagens, ultima_mensagem_slow, advertencias } }
+        permissoes_por_grupo: {}    // { [jidGrupo]: ["comando1", "comando2", ...] }
     };
 };

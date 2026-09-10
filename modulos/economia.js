@@ -1,9 +1,64 @@
 // modulos/economia.js
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const { resolverIdentidade, obterAlvo } = require('./jidUtils');
+const { enviarComMidiaOpcional } = require('./midiaOpcional');
 
 // Números vermelhos da roleta europeia padrão (0 é verde/casa, o resto é preto)
 const NUMEROS_VERMELHOS = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+
+// v2: calcula a data (dia) no fuso de Moçambique, não no fuso do servidor —
+// evita que os resets diários (trabalhar/minerar/pescar/raspadinha) virem
+// no horário errado quando o servidor roda em UTC (ex: Railway/Render).
+function obterDataMaputo() {
+    return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Africa/Maputo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+// v2: cooldowns de !assaltar e !roubar — mesmo padrão de janela por timestamp
+// que o !revidar já usa pra sua própria janela de 24h.
+const COOLDOWN_ASSALTO_MS = 12 * 60 * 60 * 1000; // 12h
+const COOLDOWN_ROUBO_MS = 12 * 60 * 60 * 1000;   // 12h
+
+// v2 (Entrega 13): tabela de treinos/habilidades pro !duelo (diversao.js) —
+// preço e tempo de treino, mais o bônus % e duração da habilidade que ele
+// vira quando pronto. Fica aqui porque a loja (!loja/!comprar) inicia o
+// treino; exportada pra quem mais precisar ler a mesma tabela (o !duelo).
+const TREINOS = {
+    marujo:   { nome: "🌊 Treino do Marujo",  preco: 1500, duracao_treino_ms: 4 * 60 * 60 * 1000,  bonus_pct: 8,  duracao_habilidade_ms: 12 * 60 * 60 * 1000 },
+    corsario: { nome: "⚓ Treino do Corsário", preco: 3500, duracao_treino_ms: 10 * 60 * 60 * 1000, bonus_pct: 15, duracao_habilidade_ms: 24 * 60 * 60 * 1000 },
+    kraken:   { nome: "🐙 Treino do Kraken",   preco: 7000, duracao_treino_ms: 20 * 60 * 60 * 1000, bonus_pct: 25, duracao_habilidade_ms: 48 * 60 * 60 * 1000 }
+};
+
+// v2 (Entrega 13): checagem lazy (Date.now()), mesmo padrão do investimento —
+// sem cron/setInterval. Chamada sempre que um comando de economia toca num
+// usuário (e também de dentro do !duelo, em diversao.js): treino que já
+// venceu o prazo vira habilidade ativa sozinho; habilidade que já expirou é
+// removida. Retorna true se algo mudou, pra quem chamar decidir se salva.
+function processarTreinosHabilidades(u) {
+    if (!u.treinos_em_andamento) u.treinos_em_andamento = [];
+    if (!u.habilidades_ativas) u.habilidades_ativas = [];
+    let mudou = false;
+
+    const prontos = u.treinos_em_andamento.filter(t => Date.now() >= t.pronto_em);
+    if (prontos.length > 0) {
+        u.treinos_em_andamento = u.treinos_em_andamento.filter(t => Date.now() < t.pronto_em);
+        prontos.forEach(t => {
+            const infoTreino = TREINOS[t.tipo];
+            if (!infoTreino) return;
+            u.habilidades_ativas.push({
+                tipo: t.tipo,
+                bonus_pct: infoTreino.bonus_pct,
+                expira_em: Date.now() + infoTreino.duracao_habilidade_ms
+            });
+        });
+        mudou = true;
+    }
+
+    const qtdAntes = u.habilidades_ativas.length;
+    u.habilidades_ativas = u.habilidades_ativas.filter(h => Date.now() < h.expira_em);
+    if (u.habilidades_ativas.length !== qtdAntes) mudou = true;
+
+    return mudou;
+}
 
 const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
     try {
@@ -28,13 +83,8 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
         if (u.pescas_hoje === undefined) u.pescas_hoje = 0;
         if (u.raspadinhas_hoje === undefined) u.raspadinhas_hoje = 0;
 
-        // Expiração real do título comprado (v2 — antes era só um texto
-        // cosmético no !gold, nunca chegava a ser verificado em lugar nenhum).
-        if (u.data_expiracao && Date.now() >= u.data_expiracao) {
-            u.titulo_comprado = null;
-            u.data_expiracao = null;
-            salvarDB(db);
-        }
+        // v2 (Entrega 13): treino pronto → habilidade ativa; habilidade vencida → removida.
+        if (processarTreinosHabilidades(u)) salvarDB(db);
 
         // Estrutura fixa de títulos com preços e raridades
         const catálogoTítulos = {
@@ -68,15 +118,26 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
         };
 
         // v2: só existe 1 slot comprado agora (titulo_comprado), não mais titulo_1/titulo_2
+        // v2: a expiração do título (antes checada só pro próprio sender lá em cima)
+        // agora é checada aqui, pra TODOS os usuários, já que essa função já
+        // itera todo mundo — assim vagas presas de quem sumiu do grupo se
+        // auto-curam sozinhas, sem precisar de um sweep/cron separado.
         const contarDonosRaridade = (raridade) => {
             let contagem = 0;
+            let houveExpiracao = false;
             Object.values(db.usuarios).forEach(user => {
+                if (user.data_expiracao && Date.now() >= user.data_expiracao) {
+                    user.titulo_comprado = null;
+                    user.data_expiracao = null;
+                    houveExpiracao = true;
+                }
                 if (user.titulo_comprado && obterRaridadePorNome(user.titulo_comprado) === raridade) contagem++;
             });
+            if (houveExpiracao) salvarDB(db);
             return contagem;
         };
 
-        const hojeData = new Date().toLocaleDateString();
+        const hojeData = obterDataMaputo();
         if (u.ultimo_mensagem_data !== hojeData) {
             u.trabalhos_hoje = 0;
             u.mineracoes_hoje = 0;
@@ -120,6 +181,27 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 if (uAlvo.mineracoes_hoje === undefined) uAlvo.mineracoes_hoje = 0;
                 if (uAlvo.pescas_hoje === undefined) uAlvo.pescas_hoje = 0;
                 if (uAlvo.raspadinhas_hoje === undefined) uAlvo.raspadinhas_hoje = 0;
+                if (alvoUser !== sender && processarTreinosHabilidades(uAlvo)) salvarDB(db);
+
+                // Bloco de treinos/habilidades (Entrega 13) — só aparece se tiver algo pra mostrar
+                let blocoTreino = "";
+                if ((uAlvo.treinos_em_andamento || []).length > 0) {
+                    blocoTreino += ` ⏳ 𝗧𝗿𝗲𝗶𝗻𝗼𝘀 𝗲𝗺 𝗮𝗻𝗱𝗮𝗺𝗲𝗻𝘁𝗼:\n`;
+                    uAlvo.treinos_em_andamento.forEach(t => {
+                        const infoT = TREINOS[t.tipo];
+                        const restanteMin = Math.max(0, Math.ceil((t.pronto_em - Date.now()) / 60000));
+                        blocoTreino += `   • ${infoT ? infoT.nome : t.tipo} — pronto em ${restanteMin}min\n`;
+                    });
+                }
+                if ((uAlvo.habilidades_ativas || []).length > 0) {
+                    blocoTreino += ` ⚔️ 𝗛𝗮𝗯𝗶𝗹𝗶𝗱𝗮𝗱𝗲𝘀 𝗮𝘁𝗶𝘃𝗮𝘀 (𝗯𝗼̂𝗻𝘂𝘀 𝗻𝗼 !𝗱𝘂𝗲𝗹𝗼):\n`;
+                    uAlvo.habilidades_ativas.forEach(h => {
+                        const infoT = TREINOS[h.tipo];
+                        const restanteMin = Math.max(0, Math.ceil((h.expira_em - Date.now()) / 60000));
+                        blocoTreino += `   • ${infoT ? infoT.nome : h.tipo} — +${h.bonus_pct}%, expira em ${restanteMin}min\n`;
+                    });
+                }
+                if (blocoTreino) blocoTreino += `\n`;
 
                 let blocoTitulos = "";
                 if (uAlvo.titulo_comprado) {
@@ -159,7 +241,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     ...(uAlvo.emprestimos_feitos || []).map(e => e.devedor),
                     ...(uAlvo.emprestimos_recebidos || []).map(e => e.credor)];
 
-                const goldTxt = `╔═══════════════════════════════════════╗\n         🪙  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  🪙\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${alvoUser.split('@')[0]}\n 🪙 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${uAlvo.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${uAlvo.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱ο: [${uAlvo.escudo ? 'ATIVO' : 'INATIVO'}]\n 🩹 𝗦𝗲𝗴𝘂𝗿𝗼 𝗣𝗮𝗿𝗰𝗶𝗮𝗹: [${uAlvo.seguro_parcial ? 'ATIVO' : 'INATIVO'}]\n 🔒 𝗖𝗼𝗳𝗿𝗲 𝗕𝗹𝗶𝗻𝗱𝗮𝗱𝗼: [${uAlvo.cofre_blindado ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${uAlvo.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n${blocoTitulos}─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${uAlvo.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${uAlvo.mineracoes_hoje}/5)\n 🎣 Pescas hoje: (${uAlvo.pescas_hoje}/5)\n 🎫 Raspadinhas hoje: (${uAlvo.raspadinhas_hoje}/5)\n─────────────────────────────────────────\n${blocoRoubos}${blocoEmprestimos}╚═══════════════════════════════════════╝`;
+                const goldTxt = `╔═══════════════════════════════════════╗\n         🪙  𝗖𝗔𝗥𝗧𝗘𝗜𝗥𝗔 𝗩𝗜𝗥𝗧𝗨𝗔𝗟  🪙\n╚═══════════════════════════════════════╝\n 👤 𝗨𝘀𝘂𝗮́𝗿𝗶𝗼: @${alvoUser.split('@')[0]}\n 🪙 𝗦𝗮𝗹𝗱𝗼 𝗔𝘁𝘂𝗮𝗹: ${uAlvo.golds} Golds\n 🏦 𝗡𝗼 𝗕𝗮𝗻𝗰ο: ${uAlvo.banco} Golds\n 🛡️ 𝗘𝘀𝗰𝘂𝗱ο: [${uAlvo.escudo ? 'ATIVO' : 'INATIVO'}]\n 🩹 𝗦𝗲𝗴𝘂𝗿𝗼 𝗣𝗮𝗿𝗰𝗶𝗮𝗹: [${uAlvo.seguro_parcial ? 'ATIVO' : 'INATIVO'}]\n 🔒 𝗖𝗼𝗳𝗿𝗲 𝗕𝗹𝗶𝗻𝗱𝗮𝗱𝗼: [${uAlvo.cofre_blindado ? 'ATIVO' : 'INATIVO'}]\n 📢 𝗔𝗽𝗿𝗲𝘀𝗲𝗻𝘁𝗮𝗰̧𝗮̃𝗼: [${uAlvo.apresentacao ? 'LIGADA' : 'DESLIGADA'}]\n\n${blocoTitulos}─────────────────────────────────────────\n 📊 [ 𝗘𝗡𝗘𝗥𝗚𝗜𝗔 𝗗𝗜𝗔𝗥𝗜𝗔 ] ────────────\n 🔨 Trabalhos hoje: (${uAlvo.trabalhos_hoje}/5)\n ⛏️ Minerações hoje: (${uAlvo.mineracoes_hoje}/5)\n 🎣 Pescas hoje: (${uAlvo.pescas_hoje}/5)\n 🎫 Raspadinhas hoje: (${uAlvo.raspadinhas_hoje}/5)\n─────────────────────────────────────────\n${blocoTreino}${blocoRoubos}${blocoEmprestimos}╚═══════════════════════════════════════╝`;
                 await sock.sendMessage(from, { text: goldTxt, mentions: [...new Set(mentionsGold)] }, { quoted: msg });
                 break;
             }
@@ -276,7 +358,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     const premioRoleta = apostaRoleta * multiplicador;
                     u.golds += premioRoleta;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🎡 *ROLETA:* Caiu no *${numeroSorteado}* (${corSorteada || 'verde/casa'})! Você ganhou *${premioRoleta} Golds*!${textoSorte}` }, { quoted: msg });
+                    const textoRoleta = `🎡 *ROLETA:* Caiu no *${numeroSorteado}* (${corSorteada || 'verde/casa'})! Você ganhou *${premioRoleta} Golds*!${textoSorte}`;
+                    if (!isNaN(numeroApostado)) {
+                        // Acertar o número exato (14x) é o jackpot da roleta
+                        await enviarComMidiaOpcional(sock, from, 'jackpot', textoRoleta, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(from, { text: textoRoleta }, { quoted: msg });
+                    }
                 } else {
                     salvarDB(db);
                     await sock.sendMessage(from, { text: `🎡 *ROLETA:* Caiu no *${numeroSorteado}* (${corSorteada || 'verde/casa'})! Você perdeu a aposta de *${apostaRoleta} Golds*.${textoSorte}` }, { quoted: msg });
@@ -312,7 +400,13 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     const premioSlots = apostaSlots * multiplicadorSlots;
                     u.golds += premioSlots;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🎰 [ ${linhaSlots} ]\n🎉 Você ganhou *${premioSlots} Golds*!${textoSorteSlots}` }, { quoted: msg });
+                    const textoSlots = `🎰 [ ${linhaSlots} ]\n🎉 Você ganhou *${premioSlots} Golds*!${textoSorteSlots}`;
+                    if (multiplicadorSlots === 20) {
+                        // Três 7️⃣ é o jackpot dos slots — mesmo evento usado no jackpot da roleta
+                        await enviarComMidiaOpcional(sock, from, 'jackpot', textoSlots, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(from, { text: textoSlots }, { quoted: msg });
+                    }
                 } else {
                     salvarDB(db);
                     await sock.sendMessage(from, { text: `🎰 [ ${linhaSlots} ]\n💨 Não foi dessa vez, perdeu *${apostaSlots} Golds*.${textoSorteSlots}` }, { quoted: msg });
@@ -369,6 +463,11 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             }
 
             case 'assaltar': {
+                if (u.ultimo_assalto && (Date.now() - u.ultimo_assalto) < COOLDOWN_ASSALTO_MS) {
+                    const horasRestantes = Math.ceil((COOLDOWN_ASSALTO_MS - (Date.now() - u.ultimo_assalto)) / 3600000);
+                    return sock.sendMessage(from, { text: `⏳ Você já tentou um assalto recentemente. Espere mais ${horasRestantes}h para tentar de novo.` }, { quoted: msg });
+                }
+
                 const alvoAssalto = obterAlvo(msg);
                 if (!alvoAssalto) return sock.sendMessage(from, { text: "❌ Marque ou responda a mensagem de quem você deseja assaltar! Ex: `!assaltar @membro`" }, { quoted: msg });
                 if (alvoAssalto === sender) return sock.sendMessage(from, { text: "🤔 Você está tentando se assaltar? Deixe de macaquice!" }, { quoted: msg });
@@ -378,6 +477,8 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 vitima.historico_roubos = vitima.historico_roubos || [];
 
                 if ((vitima.golds || 0) < 50) return sock.sendMessage(from, { text: "💧 Esse membro está muito pobre, não vale a pena assaltá-lo. O crime não compensa tanto assim!" }, { quoted: msg });
+
+                u.ultimo_assalto = Date.now(); // conta como tentativa a partir daqui — cooldown vale mesmo se o resultado for escudo/falha
 
                 if (vitima.escudo) {
                     vitima.escudo = false;
@@ -395,7 +496,8 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     u.golds += roubado;
                     vitima.historico_roubos.push({ atacante: sender, tipo: 'carteira', sucesso: true, timestamp: Date.now() });
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `🏴‍☠️ *ASSALTO BEM SUCEDIDO:* Você sorrateiramente surrupiou *${roubado} Golds* da carteira de @${alvoAssalto.split('@')[0]}!${reduziuSeguro ? ' (Seguro Parcial dela reduziu o valor pela metade)' : ''} 🌊`, mentions: [alvoAssalto] }, { quoted: msg });
+                    const textoAssalto = `🏴‍☠️ *ASSALTO BEM SUCEDIDO:* Você sorrateiramente surrupiou *${roubado} Golds* da carteira de @${alvoAssalto.split('@')[0]}!${reduziuSeguro ? ' (Seguro Parcial dela reduziu o valor pela metade)' : ''} 🌊`;
+                    await enviarComMidiaOpcional(sock, from, 'assalto-sucesso', textoAssalto, { quoted: msg, mentions: [alvoAssalto] });
                 } else {
                     const perdaAssalto = Math.floor(u.golds * 0.15);
                     u.golds = Math.max(0, u.golds - perdaAssalto);
@@ -407,6 +509,11 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             }
 
             case 'roubar': {
+                if (u.ultimo_roubo && (Date.now() - u.ultimo_roubo) < COOLDOWN_ROUBO_MS) {
+                    const horasRestantesRoubo = Math.ceil((COOLDOWN_ROUBO_MS - (Date.now() - u.ultimo_roubo)) / 3600000);
+                    return sock.sendMessage(from, { text: `⏳ Você já tentou roubar um banco recentemente. Espere mais ${horasRestantesRoubo}h para tentar de novo.` }, { quoted: msg });
+                }
+
                 const alvoRoubar = obterAlvo(msg);
                 if (!alvoRoubar) return sock.sendMessage(from, { text: "❌ Marque ou responda a mensagem de quem você deseja roubar o banco! Ex: `!roubar @membro`" }, { quoted: msg });
                 if (alvoRoubar === sender) return sock.sendMessage(from, { text: "🤔 Você não pode roubar o próprio banco!" }, { quoted: msg });
@@ -416,6 +523,8 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 vitimaBanco.historico_roubos = vitimaBanco.historico_roubos || [];
 
                 if ((vitimaBanco.banco || 0) < 100) return sock.sendMessage(from, { text: "💧 Esse membro não tem golds suficientes guardados no banco pra valer o risco!" }, { quoted: msg });
+
+                u.ultimo_roubo = Date.now(); // conta como tentativa a partir daqui — cooldown vale mesmo se o resultado for falha
 
                 let chanceSucesso = 0.35;
                 if (vitimaBanco.cofre_blindado) chanceSucesso -= 0.15;
@@ -464,7 +573,8 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     vitimaRevidar.golds -= roubadoRevidar;
                     u.golds += roubadoRevidar;
                     salvarDB(db);
-                    await sock.sendMessage(from, { text: `⚔️ *REVIDE CERTEIRO:* Você se vingou de @${alvoRevidar.split('@')[0]} e recuperou *${roubadoRevidar} Golds*! 🌊`, mentions: [alvoRevidar] }, { quoted: msg });
+                    const textoRevidar = `⚔️ *REVIDE CERTEIRO:* Você se vingou de @${alvoRevidar.split('@')[0]} e recuperou *${roubadoRevidar} Golds*! 🌊`;
+                    await enviarComMidiaOpcional(sock, from, 'revidar-sucesso', textoRevidar, { quoted: msg, mentions: [alvoRevidar] });
                 } else {
                     const perdaRevidar = Math.floor(u.golds * 0.15);
                     u.golds = Math.max(0, u.golds - perdaRevidar);
@@ -613,7 +723,7 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
             }
 
             case 'loja': {
-                const lojaTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██         🏪  𝗟𝗢𝗝𝗔 𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧  🏪         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🛡️ *escudo* — 50 🪙\n   Bloqueia 100% de 1 assalto (!assaltar), quebra com o uso.\n\n📢 *apresentacaobuy* — 100 🪙\n   Ativa o anúncio automático do seu título no chat.\n\n🩹 *seguroparcial* — 80 🪙\n   Reduz pela metade o valor roubado num !assaltar. Não quebra com o uso.\n\n🔋 *recargarapida* — 60 🪙\n   Uso único: zera na hora o limite diário de !trabalhar e !minerar.\n\n🔒 *cofreblindado* — 150 🪙\n   Reduz a chance de sucesso de um !roubar (mira o banco) contra você.\n\n🎣 *iscaespecial* — 70 🪙\n   Aumenta os prêmios do !pescar por 24 horas.\n\n🍀 *sortegrande* — 100 🪙\n   +10 fichas de segunda chance em !roleta / !slots / !dados.\n\n🔴 *TÍTULOS LENDÁRIOS* (3.000🪙 | limite 1 dono/grupo)\n➔ luasuperior1 | pecadoganancia | reipiratas | vingadorhogwarts | donodabanca\n\n🟡 *TÍTULOS DE OURO* (1.500🪙 | limite 5 donos/grupo)\n➔ luasuperior2 | luasuperior3 | supersaiyajin | chefedehawkins | hereditariajoseon\n\n⚪ *TÍTULOS DE PRATA* (500🪙 | limite 15 donos/grupo)\n➔ luainferior1 | luainferior2 | luainferior3 | luainferior5 | hashiraagua | satorugojo | heartthrobseul | garidekonoha | membroround6 | ceodeseul | cacadordemogorgon | estudanteshisui\n\n👉 Use: *!comprar [nome_do_item]*\n⚠️ Só é possível ter 1 título comprado por vez — use *!vendertitulo* antes de trocar.\n░▒▓█████████████████████████████████████▓▒░`;
+                const lojaTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██         🏪  𝗟𝗢𝗝𝗔 𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧  🏪         ██▓\n░▒▓█████████████████████████████████████▓▒░\n🛡️ *escudo* — 50 🪙\n   Bloqueia 100% de 1 assalto (!assaltar), quebra com o uso.\n\n📢 *apresentacaobuy* — 100 🪙\n   Ativa o anúncio automático do seu título no chat.\n\n🩹 *seguroparcial* — 80 🪙\n   Reduz pela metade o valor roubado num !assaltar. Não quebra com o uso.\n\n🔋 *recargarapida* — 60 🪙\n   Uso único: zera na hora o limite diário de !trabalhar e !minerar.\n\n🔒 *cofreblindado* — 150 🪙\n   Reduz a chance de sucesso de um !roubar (mira o banco) contra você.\n\n🎣 *iscaespecial* — 70 🪙\n   Aumenta os prêmios do !pescar por 24 horas.\n\n🍀 *sortegrande* — 100 🪙\n   +10 fichas de segunda chance em !roleta / !slots / !dados.\n\n⚔️ *TREINOS PRO !DUELO* (até 3 simultâneos — acompanhe em !gold)\n🌊 *marujo* — 1.500 🪙 | pronto em 4h | +8% no !duelo por 12h\n⚓ *corsario* — 3.500 🪙 | pronto em 10h | +15% no !duelo por 24h\n🐙 *kraken* — 7.000 🪙 | pronto em 20h | +25% no !duelo por 48h\n   Vira habilidade ativa sozinho quando o treino termina.\n\n🔴 *TÍTULOS LENDÁRIOS* (3.000🪙 | limite 1 dono/grupo)\n➔ luasuperior1 | pecadoganancia | reipiratas | vingadorhogwarts | donodabanca\n\n🟡 *TÍTULOS DE OURO* (1.500🪙 | limite 5 donos/grupo)\n➔ luasuperior2 | luasuperior3 | supersaiyajin | chefedehawkins | hereditariajoseon\n\n⚪ *TÍTULOS DE PRATA* (500🪙 | limite 15 donos/grupo)\n➔ luainferior1 | luainferior2 | luainferior3 | luainferior5 | hashiraagua | satorugojo | heartthrobseul | garidekonoha | membroround6 | ceodeseul | cacadordemogorgon | estudanteshisui\n\n👉 Use: *!comprar [nome_do_item]*\n⚠️ Só é possível ter 1 título comprado por vez — use *!vendertitulo* antes de trocar.\n░▒▓█████████████████████████████████████▓▒░`;
                 await sock.sendMessage(from, { text: lojaTxt }, { quoted: msg });
                 break;
             }
@@ -682,6 +792,19 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     return sock.sendMessage(from, { text: `🍀 *SORTE GRANDE ATIVADA:* +10 fichas de segunda chance pra !roleta / !slots / !dados! Total agora: ${u.sorte_grande_jogadas}.` }, { quoted: msg });
                 }
 
+                if (TREINOS[itemAlvo]) {
+                    const infoTreino = TREINOS[itemAlvo];
+                    if (u.golds < infoTreino.preco) return sock.sendMessage(from, { text: `❌ Golds insuficientes! O *${infoTreino.nome}* custa *${infoTreino.preco} Golds*.` }, { quoted: msg });
+                    if ((u.treinos_em_andamento || []).length >= 3) return sock.sendMessage(from, { text: "❌ Você já tem 3 treinos em andamento — o máximo permitido ao mesmo tempo. Espere algum terminar (veja em !gold)." }, { quoted: msg });
+
+                    u.golds -= infoTreino.preco;
+                    u.treinos_em_andamento.push({ tipo: itemAlvo, pronto_em: Date.now() + infoTreino.duracao_treino_ms });
+                    salvarDB(db);
+                    const horasTreino = Math.round(infoTreino.duracao_treino_ms / 3600000);
+                    const horasHabilidade = Math.round(infoTreino.duracao_habilidade_ms / 3600000);
+                    return sock.sendMessage(from, { text: `⚔️ *${infoTreino.nome} INICIADO:* Fica pronto em ${horasTreino}h e vira habilidade ativa sozinho — +${infoTreino.bonus_pct}% no !duelo por ${horasHabilidade}h. Acompanhe em !gold! 🌊` }, { quoted: msg });
+                }
+
                 const itemTitulo = catálogoTítulos[itemAlvo];
                 if (!itemTitulo) return sock.sendMessage(from, { text: "❌ Item ou título não encontrado em nossa vitrine. Digite *!loja* para ver as opções!" }, { quoted: msg });
 
@@ -737,3 +860,5 @@ const economiaModulo = async (sock, msg, comando, args, db, salvarDB) => {
 module.exports = economiaModulo;
 module.exports.economiaModulo = economiaModulo;
 module.exports.default = economiaModulo;
+module.exports.TREINOS = TREINOS;
+module.exports.processarTreinosHabilidades = processarTreinosHabilidades;

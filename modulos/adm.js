@@ -1,5 +1,23 @@
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const { resolverIdentidade, participanteBruto, obterAlvo, temMencaoExplicita, obterMensagensRecentes, limparMensagensRecentes } = require('./jidUtils');
+const { enviarComMidiaOpcional } = require('./midiaOpcional');
+
+// v2 (Entrega 4): devolve (criando se preciso) o sub-objeto de moderação do
+// usuário PARA ESTE GRUPO especificamente — mesmo helper usado no
+// comandos.js, duplicado aqui porque !adv e !mutar escrevem diretamente
+// nesse estado.
+function obterModeracaoGrupo(u, groupJid) {
+    if (!u.moderacao_por_grupo) u.moderacao_por_grupo = {};
+    if (!u.moderacao_por_grupo[groupJid]) {
+        u.moderacao_por_grupo[groupJid] = {
+            mutado_ate: null,
+            historico_mensagens: [],
+            ultima_mensagem_slow: null,
+            advertencias: []
+        };
+    }
+    return u.moderacao_por_grupo[groupJid];
+}
 
 module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoComando = false) => {
     const from = msg.key.remoteJid;
@@ -82,15 +100,15 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             if (alvoAdv === botId) return sock.sendMessage(from, { text: "❌ Você não pode dar advertências para o próprio bot." }, { quoted: msg });
 
             if (!db.usuarios[alvoAdv]) db.usuarios[alvoAdv] = criarUsuarioPadrao();
-            if (!db.usuarios[alvoAdv].advertencias) db.usuarios[alvoAdv].advertencias = [];
+            const modGrupoAdv = obterModeracaoGrupo(db.usuarios[alvoAdv], from);
 
             const timestampAgora = Date.now();
-            db.usuarios[alvoAdv].advertencias.push(timestampAgora);
+            modGrupoAdv.advertencias.push(timestampAgora);
 
             const duasSemanasEmMs = 14 * 24 * 60 * 60 * 1000;
-            const advsRecentes = db.usuarios[alvoAdv].advertencias.filter(t => (timestampAgora - t) <= duasSemanasEmMs);
+            const advsRecentes = modGrupoAdv.advertencias.filter(t => (timestampAgora - t) <= duasSemanasEmMs);
 
-            db.usuarios[alvoAdv].advertencias = advsRecentes;
+            modGrupoAdv.advertencias = advsRecentes;
             salvarDB(db);
 
             const totalAdvs = advsRecentes.length;
@@ -100,7 +118,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
                     return sock.sendMessage(from, { text: `🚨 *LIMITE ALCANÇADO:* O membro @${alvoAdv.split('@')[0]} atingiu ${totalAdvs} advertências em menos de 2 semanas! Porém, não posso bani-lo porque não sou Administrador do grupo! 💧`, mentions: [alvoAdv] }, { quoted: msg });
                 }
                 await sock.groupParticipantsUpdate(from, [alvoAdv], "remove");
-                db.usuarios[alvoAdv].advertencias = [];
+                modGrupoAdv.advertencias = [];
                 salvarDB(db);
                 await sock.sendMessage(from, { text: `🔨 *BAN AUTOMÁTICO:* O usuário @${alvoAdv.split('@')[0]} acumulou ${totalAdvs} advertências dentro do prazo de 2 semanas e foi banido do grupo!`, mentions: [alvoAdv] });
             } else {
@@ -127,7 +145,8 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             if (alvoBan === botId) return sock.sendMessage(from, { text: "🤔 Tentar me banir usando meus próprios comandos? Genial." }, { quoted: msg });
 
             await sock.groupParticipantsUpdate(from, [alvoBan], "remove");
-            await sock.sendMessage(from, { text: `🔨 *JUSTIÇA APLICADA:* @${alvoBan.split('@')[0]} foi devidamente removido do grupo por má conduta!`, mentions: [alvoBan] }, { quoted: msg });
+            const textoBanKick = `🔨 *JUSTIÇA APLICADA:* @${alvoBan.split('@')[0]} foi devidamente removido do grupo por má conduta!`;
+            await enviarComMidiaOpcional(sock, from, 'ban-kick', textoBanKick, { quoted: msg, mentions: [alvoBan] });
             break;
         }
 
@@ -237,7 +256,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB, possuiPermissaoC
             if (alvoMutar === botId) return sock.sendMessage(from, { text: "🤔 Não posso me mutar." }, { quoted: msg });
 
             if (!db.usuarios[alvoMutar]) db.usuarios[alvoMutar] = criarUsuarioPadrao();
-            db.usuarios[alvoMutar].mutado_ate = Date.now() + minutosMutar * 60000;
+            obterModeracaoGrupo(db.usuarios[alvoMutar], from).mutado_ate = Date.now() + minutosMutar * 60000;
             salvarDB(db);
             let avisoBotAdmMutar = botIsAdmin ? "" : "\n⚠️ Atenção: não sou administrador aqui, então não vou conseguir apagar as mensagens dele(a) enquanto estiver mutado.";
             await sock.sendMessage(from, { text: `🔇 @${alvoMutar.split('@')[0]} foi silenciado por *${minutosMutar} minutos*.${avisoBotAdmMutar}`, mentions: [alvoMutar] }, { quoted: msg });

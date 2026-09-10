@@ -1,6 +1,11 @@
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const interacaoTextos = require('../interacao_textos');
 const { resolverIdentidade, obterAlvo } = require('./jidUtils');
+const { enviarComMidiaOpcional } = require('./midiaOpcional');
+// v2 (Entrega 13): reusa a mesma checagem lazy de treino→habilidade do
+// economia.js (que é quem inicia o treino via !comprar), pra não duplicar
+// a lógica aqui.
+const { processarTreinosHabilidades } = require('./economia');
 
 module.exports = async (sock, msg, comando, args, db, salvarDB) => {
     const from = msg.key.remoteJid;
@@ -64,7 +69,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
 
     switch (comandoBase) {
         case 'menujogos': {
-            const menuJogosTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🎮  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗗𝗜𝗩𝗘𝗥𝗦𝗔𝗢  🎮      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 A zoeira e os mini-games oficiais do grupo!\n\n ➔ *!duelo [@user ou responda] [aposta]* - Combate valendo Golds.\n ➔ *!casar [@user ou responda]* - Faz o pedido oficial de matrimônio.\n ➔ *!aceitar* - Consuma a união sob a benção de Olden.\n ➔ *!divorciar* - Encerra o casamento virtual.\n ➔ *!beijar / !bater / !abracar [@user ou responda]* - Ações textuais cômicas.\n ➔ *!gado* - Mede o nível de paixão boba do membro.\n ➔ *!gostoso* - Avalia a latência da sua beleza.\n ➔ *!curiosidade* - Fato aleatório global do robô.\n ➔ *!curiosidade/[categoria]* - Alvo estrito:\n    _(sports, games, ciencia, arte, filmes, historia, animes, tecnologia, natureza)_\n░▒▓█████████████████████████████████████▓▒░`;
+            const menuJogosTxt = `░▒▓█████████████████████████████████████▓▒░\n▓██      🎮  𝗟𝗘𝗜𝗖𝗬𝗕𝗢𝗧 - 𝗗𝗜𝗩𝗘𝗥𝗦𝗔𝗢  🎮      ██▓\n░▒▓█████████████████████████████████████▓▒░\n 🌊 A zoeira e os mini-games oficiais do grupo!\n\n ➔ *!duelo [@user ou responda] [aposta]* - Combate valendo Golds.\n ➔ *!casar [@user ou responda]* - Faz o pedido oficial de matrimônio.\n ➔ *!aceitar* - Consuma a união sob a benção de Olden.\n ➔ *!divorciar* - Encerra o casamento virtual.\n ➔ *!beijar / !bater / !abracar [@user ou responda]* - Ações textuais cômicas.\n ➔ *!gado* - Mede o nível de paixão boba do membro.\n ➔ *!gostoso* - Avalia a latência da sua beleza.\n ➔ *!curiosidade* - Fato aleatório global do robô.\n ➔ *!curiosidade/[categoria]* - Alvo estrito:\n    _(sports, games, ciencia, arte, filmes, historia, animes, tecnologia, natureza)_\n ➔ *!topbeijos* / *!topabracos* - Ranking global de quem mais recebeu.\n ➔ *!casaldomes* - O casal virtual mais afetuoso do momento.\n░▒▓█████████████████████████████████████▓▒░`;
             await sock.sendMessage(from, { text: menuJogosTxt }, { quoted: msg });
             break;
         }
@@ -87,16 +92,38 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
                 return sock.sendMessage(from, { text: "❌ O seu oponente está muito quebrado e não tem essa quantia para cobrir a aposta!" }, { quoted: msg });
             }
 
-            if (Math.random() > 0.5) {
+            // v2 (Entrega 13): antes era sempre Math.random() > 0.5, 50/50 fixo.
+            // Agora soma o bônus de todas as habilidades ativas (treinos
+            // concluídos — ver !loja/!comprar) de cada lado. Checagem lazy
+            // igual à do economia.js, rodada aqui pros dois lados do duelo
+            // pra ninguém ficar com uma habilidade já vencida contando bônus.
+            // Teto de segurança [15%, 85%] pra ninguém virar praticamente
+            // imbatível nem condenado de largada só por causa dos treinos.
+            const uAdversario = db.usuarios[adversario];
+            let mudouTreino = false;
+            if (processarTreinosHabilidades(u)) mudouTreino = true;
+            if (processarTreinosHabilidades(uAdversario)) mudouTreino = true;
+            if (mudouTreino) salvarDB(db);
+
+            const bonusDesafiante = (u.habilidades_ativas || []).reduce((soma, h) => soma + h.bonus_pct, 0);
+            const bonusAdversario = (uAdversario.habilidades_ativas || []).reduce((soma, h) => soma + h.bonus_pct, 0);
+            const chanceDesafiante = Math.min(85, Math.max(15, 50 + bonusDesafiante - bonusAdversario));
+
+            let blocoBonus = "";
+            if (bonusDesafiante > 0 || bonusAdversario > 0) {
+                blocoBonus = `\n🎯 Chance no combate: @${sender.split('@')[0]} ${chanceDesafiante}% (habilidades +${bonusDesafiante}%) x @${adversario.split('@')[0]} ${100 - chanceDesafiante}% (habilidades +${bonusAdversario}%)`;
+            }
+
+            if (Math.random() * 100 < chanceDesafiante) {
                 u.golds += aposta;
-                db.usuarios[adversario].golds -= aposta;
+                uAdversario.golds -= aposta;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `⚔️ *💥 DUELO SUPREMO:* @${sender.split('@')[0]} aplicou uma rasteira aquática magistral, nocauteou @${adversario.split('@')[0]} e embolsou *${aposta} Golds*! 🌊`, mentions: [sender, adversario] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `⚔️ *💥 DUELO SUPREMO:* @${sender.split('@')[0]} aplicou uma rasteira aquática magistral, nocauteou @${adversario.split('@')[0]} e embolsou *${aposta} Golds*!${blocoBonus} 🌊`, mentions: [sender, adversario] }, { quoted: msg });
             } else {
                 u.golds -= aposta;
-                db.usuarios[adversario].golds += aposta;
+                uAdversario.golds += aposta;
                 salvarDB(db);
-                await sock.sendMessage(from, { text: `⚔️ *💥 DUELO SUPREMO:* @${sender.split('@')[0]} tentou dar um soco cinematográfico, mas escorregou feio numa casca de banana! @${adversario.split('@')[0]} venceu o combate e levou *${aposta} Golds*! 💧`, mentions: [sender, adversario] }, { quoted: msg });
+                await sock.sendMessage(from, { text: `⚔️ *💥 DUELO SUPREMO:* @${sender.split('@')[0]} tentou dar um soco cinematográfico, mas escorregou feio numa casca de banana! @${adversario.split('@')[0]} venceu o combate e levou *${aposta} Golds*!${blocoBonus} 💧`, mentions: [sender, adversario] }, { quoted: msg });
             }
             break;
         }
@@ -136,7 +163,7 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             salvarDB(db);
 
             const casorioTxt = `░▒▓█████████████████████████████████████▓▒░\n💍   𝗠𝗔𝗧𝗥𝗜𝗠𝗢𝗡𝗜𝗢 𝗩𝗜𝗥𝗧𝗨𝗔𝗟 𝗖𝗢𝗡𝗦𝗨𝗠𝗔𝗗𝗢   💍\n░▒▓████████▒▒▓██████████████████████████▓▒░\n🔔 Soltem os fogos! sob as ordens e benção do comandante supremo Olden, @${sender.split('@')[0]} e @${noivo.split('@')[0]} agora estão casados virtualmente!\n\n❤️ Que a união dure até o próximo reset de banco de dados! 😉🎉`;
-            await sock.sendMessage(from, { text: casorioTxt, mentions: [sender, noivo] }, { quoted: msg });
+            await enviarComMidiaOpcional(sock, from, 'casamento', casorioTxt, { quoted: msg, mentions: [sender, noivo] });
             break;
         }
 
@@ -219,11 +246,76 @@ module.exports = async (sock, msg, comando, args, db, salvarDB) => {
             break;
         }
 
-        // v2: ranking social — ainda em construção, chega numa próxima atualização
+        // v2 (Entrega 8): ranking social real. beijados/abracados são
+        // contadores GLOBAIS do usuário (não por grupo — olha lá em cima,
+        // são incrementados direto em db.usuarios[alvo], sem groupJid no
+        // meio), então o ranking também sai global, não só de quem está
+        // neste grupo.
         case 'topbeijos':
-        case 'topabracos':
+        case 'topabracos': {
+            const campoRanking = comandoBase === 'topbeijos' ? 'beijados' : 'abracados';
+            const emojiRanking = comandoBase === 'topbeijos' ? '💋' : '🫂';
+            const tituloRanking = comandoBase === 'topbeijos' ? '𝗥𝗔𝗡𝗞𝗜𝗡𝗚: 𝗧𝗢𝗣 𝗕𝗘𝗜𝗝𝗢𝗦' : '𝗥𝗔𝗡𝗞𝗜𝗡𝗚: 𝗧𝗢𝗣 𝗔𝗕𝗥𝗔𝗖𝗢𝗦';
+
+            const ranking = Object.entries(db.usuarios)
+                .filter(([, dadosUser]) => (dadosUser[campoRanking] || 0) > 0)
+                .sort((a, b) => (b[1][campoRanking] || 0) - (a[1][campoRanking] || 0))
+                .slice(0, 5);
+
+            if (ranking.length === 0) {
+                const verbo = comandoBase === 'topbeijos' ? 'beijou' : 'abraçou';
+                const cmdSugerido = comandoBase === 'topbeijos' ? 'beijar' : 'abracar';
+                return sock.sendMessage(from, { text: `📉 Ninguém ${verbo} ninguém ainda por aqui. Use *!${cmdSugerido}* pra começar o ranking! 🌊` }, { quoted: msg });
+            }
+
+            const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+            const linhasRanking = ranking.map(([jid, dadosUser], i) => `${medalhas[i]} @${jid.split('@')[0]} — ${dadosUser[campoRanking]} ${emojiRanking}`).join('\n');
+            const mencoesRanking = ranking.map(([jid]) => jid);
+
+            await sock.sendMessage(from, {
+                text: `╔═══════════════════════════════════════╗\n          ${tituloRanking}\n╚═══════════════════════════════════════╝\n${linhasRanking}\n\n🌊 Ranking global do bot (todos os grupos).`,
+                mentions: mencoesRanking
+            }, { quoted: msg });
+            break;
+        }
+
         case 'casaldomes': {
-            await sock.sendMessage(from, { text: `🚧 *!${comando}* ainda está em construção — chega numa próxima atualização! 🌊` }, { quoted: msg });
+            // Não existe campo de "data do casamento" salvo (só existiria em
+            // usuarioPadrao.js, que esta entrega não altera), então "casal do
+            // mês" usa o que já existe: entre os casais firmados (conjugue),
+            // o par com mais carinho somado (beijos + abraços dos dois). Não
+            // é um recorte estrito de calendário — é o casal mais afetuoso
+            // no momento, decisão pragmática pra não mexer no schema.
+            const paresVistos = new Set();
+            let melhorPar = null;
+            let melhorPontuacao = -1;
+
+            for (const [jid, dadosUser] of Object.entries(db.usuarios)) {
+                const parceiro = dadosUser.conjugue;
+                if (!parceiro || !db.usuarios[parceiro]) continue;
+
+                const chavePar = [jid, parceiro].sort().join('|');
+                if (paresVistos.has(chavePar)) continue;
+                paresVistos.add(chavePar);
+
+                const dadosParceiro = db.usuarios[parceiro];
+                const pontuacaoPar = (dadosUser.beijados || 0) + (dadosUser.abracados || 0) + (dadosParceiro.beijados || 0) + (dadosParceiro.abracados || 0);
+
+                if (pontuacaoPar > melhorPontuacao) {
+                    melhorPontuacao = pontuacaoPar;
+                    melhorPar = [jid, parceiro];
+                }
+            }
+
+            if (!melhorPar) {
+                return sock.sendMessage(from, { text: "📉 Não há nenhum casal virtual firmado ainda. Use *!casar* e *!aceitar* pra mudar isso! 🌊" }, { quoted: msg });
+            }
+
+            const [metadeA, metadeB] = melhorPar;
+            await sock.sendMessage(from, {
+                text: `╔═══════════════════════════════════════╗\n          💑  𝗖𝗔𝗦𝗔𝗟 𝗗𝗢 𝗠𝗘𝗦  💑\n╚═══════════════════════════════════════╝\n@${metadeA.split('@')[0]} 💞 @${metadeB.split('@')[0]}\n\n🌊 ${melhorPontuacao} pontos de carinho somados (beijos + abraços dos dois)!`,
+                mentions: [metadeA, metadeB]
+            }, { quoted: msg });
             break;
         }
 
