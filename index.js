@@ -15,6 +15,17 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+// youtube-dl-exec é usado aqui só pra auto-atualizar o binário do yt-dlp no
+// boot (2.1) — os comandos de download em si continuam vivendo no
+// modulos/midia.js. Carregamento defensivo: se faltar, só desativa essa
+// checagem pontual, sem derrubar o bot inteiro.
+let youtubedl = null;
+try {
+    youtubedl = require('youtube-dl-exec');
+} catch (e) {
+    console.error('[SISTEMA] youtube-dl-exec não carregou — pulando a auto-atualização do yt-dlp no boot.', e.message);
+}
+
 // ─── CONTORNO DO BUG CONHECIDO DO BAILEYS (issue #2679) ───
 // fetchLatestBaileysVersion() às vezes retorna uma versão desatualizada do
 // WhatsApp Web dizendo "isLatest: true" — o WhatsApp aceita a conexão mas
@@ -128,6 +139,7 @@ const DONO_OFICIAL = '258877080511@s.whatsapp.net'; // pra onde o backup automá
 // tem um backup recente à mão sem precisar ficar de olho no log.
 let ultimoBackupEnviado = 0;
 const INTERVALO_BACKUP_MS = 20 * 60 * 1000; // 20 minutos
+let ultimoConteudoBackup = null; // v2: evita reenviar o mesmo backup quando nada mudou
 
 // ─── LIMITE DE TENTATIVAS DE PAREAMENTO (v2) ───
 // Evita martelar o WhatsApp com pedidos de código repetidos (o que pode
@@ -153,8 +165,41 @@ app.listen(port, () => {
     console.log(`[SERVER] Monitoramento ativo na porta ${port}`);
 });
 
+// ─── CAMINHO DE PERSISTÊNCIA DA SESSÃO (auth_info) — Volume do Railway ───
+// Se este serviço tiver um Volume do Railway anexado, a plataforma expõe
+// automaticamente a variável RAILWAY_VOLUME_MOUNT_PATH com o caminho do
+// disco persistente (ex: "/data"). Quando ela existe, a pasta auth_info
+// passa a viver dentro do volume — que sobrevive a redeploys sozinho, sem
+// precisar mais colar o base64 na WA_SESSION_DATA toda vez que a sessão
+// muda.
+//
+// Testamos a gravação de verdade antes de confiar no volume: se a variável
+// não existir, ou existir mas o caminho não estiver de fato gravável nesse
+// boot (ex: volume mal configurado), cai automaticamente pro comportamento
+// de sempre — pasta local dentro do projeto + restauração via
+// WA_SESSION_DATA em base64. Ou seja, pra quem não configurar um volume no
+// Railway, nada muda.
+function resolverPastaAuth() {
+    const caminhoVolume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    if (caminhoVolume) {
+        try {
+            const arquivoTeste = path.join(caminhoVolume, '.escrita_teste');
+            fs.writeFileSync(arquivoTeste, 'ok');
+            fs.unlinkSync(arquivoTeste);
+            const pastaNoVolume = path.join(caminhoVolume, 'auth_info');
+            console.log(`[SISTEMA] Volume do Railway detectado e gravável — sessão será persistida em ${pastaNoVolume} (não depende mais só da WA_SESSION_DATA).`);
+            return { pasta: pastaNoVolume, usandoVolume: true };
+        } catch (e) {
+            console.error('[SISTEMA] RAILWAY_VOLUME_MOUNT_PATH está definida mas não consegui gravar nela — caindo de volta pra pasta local + WA_SESSION_DATA.', e.message);
+        }
+    }
+    return { pasta: path.join(__dirname, 'auth_info'), usandoVolume: false };
+}
+
+const { pasta: PASTA_AUTH, usandoVolume: USANDO_VOLUME_RAILWAY } = resolverPastaAuth();
+
 function limparSessaoInvalida() {
-    const pastaAuth = path.join(__dirname, 'auth_info');
+    const pastaAuth = PASTA_AUTH;
     if (fs.existsSync(pastaAuth)) {
         try {
             if (botSocket) {
@@ -174,7 +219,7 @@ function limparSessaoInvalida() {
 }
 
 async function iniciarBot() {
-    const pastaAuth = path.join(__dirname, 'auth_info');
+    const pastaAuth = PASTA_AUTH;
 
     if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
         try {
@@ -184,13 +229,13 @@ async function iniciarBot() {
             Object.keys(sessionData).forEach(file => {
                 fs.writeFileSync(path.join(pastaAuth, file), JSON.stringify(sessionData[file]));
             });
-            console.log('[SISTEMA] Sessão restaurada com sucesso a partir das Variáveis de Ambiente!');
+            console.log('[SISTEMA] Sessão restaurada com sucesso a partir das Variáveis de Ambiente' + (USANDO_VOLUME_RAILWAY ? ' — e já gravada no volume, então os próximos boots nem vão precisar mais dela.' : '!'));
         } catch (e) {
             console.error('[ERRO VARIÁVEL SESSÃO]: Dados inválidos ou corrompidos na variável.', e.message);
         }
     }
 
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState(pastaAuth);
     const version = await obterVersaoProtocolo();
     console.log(`[WHATSAPP] Utilizando a versão de protocolo: ${version.join('.')}`);
 
@@ -231,16 +276,23 @@ async function iniciarBot() {
                 // cada INTERVALO_BACKUP_MS), só quando a conexão está de fato aberta.
                 if (statusConexao === "conectado" && (Date.now() - ultimoBackupEnviado) > INTERVALO_BACKUP_MS) {
                     ultimoBackupEnviado = Date.now();
-                    try {
-                        await botSocket.sendMessage(DONO_OFICIAL, {
-                            document: Buffer.from(base64String, 'utf-8'),
-                            fileName: `wa_session_data_${new Date().toISOString().slice(0, 16).replace(':', 'h')}.txt`,
-                            mimetype: 'text/plain',
-                            caption: '🔐 Backup automático da sessão do WhatsApp. Se o bot cair e não reconectar sozinho, cole o conteúdo desse arquivo na variável WA_SESSION_DATA do Render.'
-                        });
-                        console.log('[SISTEMA] Backup de sessão enviado automaticamente pro privado do dono.');
-                    } catch (e) {
-                        console.error('[SISTEMA] Falha ao enviar backup automático de sessão:', e.message);
+                    if (base64String === ultimoConteudoBackup) {
+                        console.log('[SISTEMA] Sessão sem mudança, backup pulado.');
+                    } else {
+                        try {
+                            await botSocket.sendMessage(DONO_OFICIAL, {
+                                document: Buffer.from(base64String, 'utf-8'),
+                                fileName: `wa_session_data_${new Date().toISOString().slice(0, 16).replace(':', 'h')}.txt`,
+                                mimetype: 'text/plain',
+                                caption: USANDO_VOLUME_RAILWAY
+                                    ? '🔐 Backup automático da sessão do WhatsApp (redundante — a sessão principal já vive no volume do Railway). Só use este arquivo se o volume for perdido: cole o conteúdo na variável WA_SESSION_DATA.'
+                                    : '🔐 Backup automático da sessão do WhatsApp. Se o bot cair e não reconectar sozinho, cole o conteúdo desse arquivo na variável WA_SESSION_DATA do Railway.'
+                            });
+                            ultimoConteudoBackup = base64String;
+                            console.log('[SISTEMA] Backup de sessão enviado automaticamente pro privado do dono.');
+                        } catch (e) {
+                            console.error('[SISTEMA] Falha ao enviar backup automático de sessão:', e.message);
+                        }
                     }
                 }
             }
@@ -380,7 +432,24 @@ if (process.env.PAUSAR_WHATSAPP === 'true') {
     console.log('[SISTEMA] PAUSAR_WHATSAPP está ativo — o bot NÃO vai tentar se conectar ao WhatsApp.');
     console.log('[SISTEMA] Pra tentar de novo, apague essa variável (ou mude pra false) no Railway e faça redeploy.');
 } else {
-    setTimeout(() => {
-        iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
-    }, 2000);
+    // ─── AUTO-ATUALIZAÇÃO DO YT-DLP (2.1) ───
+    // O YouTube muda com frequência, e binário desatualizado do yt-dlp é a
+    // causa mais comum de falha no !play/!video. Atualiza 1x no boot, antes
+    // de conectar ao WhatsApp — se falhar (ex: sem internet nesse instante),
+    // não bloqueia o boot, só loga e segue com a versão que já tinha.
+    const atualizarYtDlp = async () => {
+        if (!youtubedl) return;
+        try {
+            await youtubedl.update();
+            console.log('[SISTEMA] Binário do yt-dlp verificado/atualizado com sucesso.');
+        } catch (e) {
+            console.error('[SISTEMA] Falha ao atualizar o yt-dlp (seguindo com a versão atual):', e.message);
+        }
+    };
+
+    atualizarYtDlp().finally(() => {
+        setTimeout(() => {
+            iniciarBot().catch(err => console.error('[ERRO INICIALIZAÇÃO]:', err));
+        }, 2000);
+    });
 }

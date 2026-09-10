@@ -12,6 +12,7 @@
     "pino": "^9.1.0",
     "ffmpeg-static": "^5.2.0",
     "wa-sticker-formatter": "^4.4.4",
-    "youtube-dl-exec": "^3.0.10"
+    "youtube-dl-exec": "^3.0.10",
+    "tesseract.js": "^7.0.0"
   }
 }

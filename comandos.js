@@ -20,6 +20,30 @@ const DONO_OFICIAL = '258877080511@s.whatsapp.net';
 // Regex simples para detectar links comuns e convites de grupo do WhatsApp
 const REGEX_LINK = /https?:\/\/|www\.|chat\.whatsapp\.com|wa\.me\//i;
 
+// v2: calcula a data (dia) no fuso de Moçambique, não no fuso do servidor —
+// evita que o bônus diário libere/tranque no horário errado quando o
+// servidor roda em UTC (ex: Railway/Render). Mesmo fix aplicado
+// separadamente no economia.js, que tem o problema no reset diário.
+function obterDataMaputo() {
+    return new Intl.DateTimeFormat('pt-PT', { timeZone: 'Africa/Maputo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+// v2 (Entrega 4): devolve (criando se preciso) o sub-objeto de moderação do
+// usuário PARA ESTE GRUPO especificamente — mutado_ate/advertencias/etc.
+// deixam de ser globais e passam a valer só dentro do grupo onde ocorreram.
+function obterModeracaoGrupo(u, groupJid) {
+    if (!u.moderacao_por_grupo) u.moderacao_por_grupo = {};
+    if (!u.moderacao_por_grupo[groupJid]) {
+        u.moderacao_por_grupo[groupJid] = {
+            mutado_ate: null,
+            historico_mensagens: [],
+            ultima_mensagem_slow: null,
+            advertencias: []
+        };
+    }
+    return u.moderacao_por_grupo[groupJid];
+}
+
 // ══════════════════════════════════════════════════════════════════
 // TRAVA ANTI-DUPLO-CLIQUE (v2)
 // Serializa a execução por usuário: se o sender já tem uma mensagem
@@ -130,34 +154,38 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         // Roda ANTES do split comando x não-comando, de propósito —
         // um usuário mutado não pode "furar" o mute mandando comando
         // em vez de conversa normal.
+        // v2 (Entrega 4): tudo isso agora é por grupo — um mute ou
+        // modo lento num grupo não afeta mais o usuário nos outros.
         // ══════════════════════════════════════════════════════════
         if (isGroup && sender !== DONO_OFICIAL) {
-            if (u.mutado_ate) {
-                if (Date.now() < u.mutado_ate) {
+            const modGrupo = obterModeracaoGrupo(u, from);
+
+            if (modGrupo.mutado_ate) {
+                if (Date.now() < modGrupo.mutado_ate) {
                     salvarDB(db);
                     return sock.sendMessage(from, { delete: msg.key }).catch(() => {});
                 }
-                u.mutado_ate = null;
+                modGrupo.mutado_ate = null;
             }
 
             if (gConfig.modolento) {
-                if (u.ultima_mensagem_slow && (Date.now() - u.ultima_mensagem_slow) < gConfig.modolento * 1000) {
+                if (modGrupo.ultima_mensagem_slow && (Date.now() - modGrupo.ultima_mensagem_slow) < gConfig.modolento * 1000) {
                     salvarDB(db);
                     return sock.sendMessage(from, { delete: msg.key }).catch(() => {});
                 }
-                u.ultima_mensagem_slow = Date.now();
+                modGrupo.ultima_mensagem_slow = Date.now();
             }
 
             if (gConfig.antiflood) {
                 const agoraFlood = Date.now();
                 const janelaMs = gConfig.antiflood.intervalo * 1000;
-                u.historico_mensagens = (u.historico_mensagens || []).filter(t => (agoraFlood - t) < janelaMs);
-                u.historico_mensagens.push(agoraFlood);
+                modGrupo.historico_mensagens = (modGrupo.historico_mensagens || []).filter(t => (agoraFlood - t) < janelaMs);
+                modGrupo.historico_mensagens.push(agoraFlood);
 
-                if (u.historico_mensagens.length > gConfig.antiflood.max) {
+                if (modGrupo.historico_mensagens.length > gConfig.antiflood.max) {
                     await sock.sendMessage(from, { delete: msg.key }).catch(() => {});
                     if (gConfig.antiflood.acao === 'mute') {
-                        u.mutado_ate = Date.now() + 5 * 60000;
+                        modGrupo.mutado_ate = Date.now() + 5 * 60000;
                         salvarDB(db);
                         return sock.sendMessage(from, { text: `🚨 *ANTI-FLOOD:* @${sender.split('@')[0]} mandou mensagens rápido demais e foi silenciado por 5 minutos!`, mentions: [sender] });
                     }
@@ -248,7 +276,7 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
             }
 
             // Bônus diário automático — primeira mensagem do dia que NÃO é comando
-            const hojeDataBonus = new Date().toLocaleDateString();
+            const hojeDataBonus = obterDataMaputo();
             if (u.ultimo_bonus_diario !== hojeDataBonus) {
                 u.ultimo_bonus_diario = hojeDataBonus;
                 u.golds = (u.golds || 0) + 20;
@@ -276,7 +304,7 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         const argumentos = corpoMensagem.trim().split(/ +/);
         const comandoUnico = argumentos.shift().toLowerCase().replace('!', '');
 
-        const possuiPermissaoComando = u.permissoes_especiais?.includes(comandoUnico);
+        const possuiPermissaoComando = u.permissoes_por_grupo?.[from]?.includes(comandoUnico);
 
         // Bot pausado manualmente pelo dono (!desligar / !ligar) — ignora tudo, silenciosamente
         if (db.config_bot.pausado && sender !== DONO_OFICIAL) {
@@ -367,15 +395,16 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         }
 
         // JOGOS EM GRUPO (v2: forca, jogo da velha, 30 segundos, roleta russa social, enquete,
-        // + ppt, verdadeoudesafio, emojicharada, quiz, sorteio, palavraencadeada)
-        const cmdsJogos = ['forca', 'chutar', 'desistirforca', 'jogodavelha', 'aceitarvelha', 'jogar', 'desistirvelha', '30s', 'vermelha', 'azul', 'iniciar30s', 'pular', 'placar30s', 'encerrar30s', 'enquete', 'roletarussa', 'ppt', 'verdadeoudesafio', 'emojicharada', 'quiz', 'sorteio', 'participar', 'sortear', 'palavraencadeada'];
+        // + ppt, verdadeoudesafio, emojicharada, quiz, sorteio, palavraencadeada, simon,
+        // adivinhanumero, anagrama, digitacao, batalha naval — Entrega 12)
+        const cmdsJogos = ['forca', 'chutar', 'desistirforca', 'jogodavelha', 'aceitarvelha', 'jogar', 'desistirvelha', '30s', 'vermelha', 'azul', 'iniciar30s', 'pular', 'placar30s', 'encerrar30s', 'enquete', 'roletarussa', 'ppt', 'verdadeoudesafio', 'emojicharada', 'quiz', 'sorteio', 'participar', 'sortear', 'palavraencadeada', 'simon', 'adivinhanumero', 'anagrama', 'digitacao', 'batalhanaval', 'aceitarbatalha', 'atirar', 'desistirbatalha'];
         if (cmdsJogos.includes(comandoUnico)) {
             const executarJogos = jogosModulo.jogosModulo || jogosModulo.default || jogosModulo;
             return await executarJogos(sock, msg, comandoUnico, argumentos, db, salvarDB);
         }
 
         // MÍDIA
-        const cmdsMidia = ['menumidia', 'sticker', 's', 'sticker-', 's-', 'attp', 'copiarsticker', 'anime', 'clima', 'google', 'wikipedia', 'letra', 'qrcode', 'encurtar', 'definicao', 'frase', 'pinterest', 'wallpaper', 'play', 'video'];
+        const cmdsMidia = ['menumidia', 'sticker', 's', 'sticker-', 's-', 'attp', 'copiarsticker', 'anime', 'clima', 'google', 'wikipedia', 'letra', 'qrcode', 'encurtar', 'definicao', 'frase', 'pinterest', 'wallpaper', 'play', 'video', 'tomp3', 'toaudio', 'brat', 'meme', 'emojimix', 'traduzir', 'tiktok', 'instagram', 'ocr'];
         if (cmdsMidia.includes(comandoUnico)) {
             const executarMidia = midiaModulo.midiaModulo || midiaModulo.default || midiaModulo;
             return await executarMidia(sock, msg, comandoUnico, argumentos, db, salvarDB);
@@ -389,7 +418,7 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         }
 
         // DONO ('ligar' adicionado como par do '!desligar'; v2: + ping, backup, listagrupos, estatisticas)
-        const cmdsDono = ['menudono', 'manutencao', 'burlar', 'desativarcmd', 'ativarcmd', 'addgold', 'remgold', 'addcelestial', 'setfoto', 'nomebot', 'limpardb', 'transmitir', 'reiniciar', 'desligar', 'ligar', 'criartitulo', 'dartitulo', 'removoertitulo', 'concederpermissao', 'ping', 'backup', 'listagrupos', 'estatisticas', 'migrarv2', 'mesclarusuario'];
+        const cmdsDono = ['menudono', 'manutencao', 'burlar', 'desativarcmd', 'ativarcmd', 'addgold', 'remgold', 'addcelestial', 'setfoto', 'nomebot', 'limpardb', 'transmitir', 'reiniciar', 'desligar', 'ligar', 'criartitulo', 'dartitulo', 'removoertitulo', 'concederpermissao', 'removerpermissao', 'ping', 'backup', 'listagrupos', 'estatisticas', 'migrarv2', 'mesclarusuario'];
         if (cmdsDono.includes(comandoUnico)) {
             if (sender !== DONO_OFICIAL) {
                 return sock.sendMessage(from, { text: "❌ *ACESSO NEGADO:* Restrito ao meu criador oficial *Olden*! 👑" }, { quoted: msg });

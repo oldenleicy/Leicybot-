@@ -1,5 +1,19 @@
 module.exports = {
     obterExplicacao: (cmd) => {
+        // Entrega 13: guia único da mecânica de treino/habilidades, acessível
+        // tanto por !ajuda treino quanto !ajuda habilidades (mesmo texto).
+        const guiaTreino = `╔═══════════════════════════════════════╗
+        ⚔️  𝗚𝗨𝗜𝗔: 𝗧𝗥𝗘𝗜𝗡𝗢𝗦 / 𝗛𝗔𝗕𝗜𝗟𝗜𝗗𝗔𝗗𝗘𝗦  ⚔️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Preparação pro \`!duelo\` — compre um treino na \`!loja\`, espere o tempo passar e ele vira sozinho uma habilidade ativa que te dá vantagem no próximo combate.
+🌊 *Como usar:* \`!comprar marujo\`, \`!comprar corsario\` ou \`!comprar kraken\`. Dá pra ter até 3 treinos em andamento ao mesmo tempo.
+📊 *Os 3 níveis:*
+➔ 🌊 *Marujo* — 1.500 🪙 | 4h de treino | +8% no \`!duelo\`, habilidade ativa por 12h.
+➔ ⚓ *Corsário* — 3.500 🪙 | 10h de treino | +15% no \`!duelo\`, habilidade ativa por 24h.
+➔ 🐙 *Kraken* — 7.000 🪙 | 20h de treino | +25% no \`!duelo\`, habilidade ativa por 48h.
+⚔️ *No combate:* Os bônus de todas as suas habilidades ativas se somam contra os do adversário (chance base 50%), com teto de segurança entre 15% e 85% — treinar ajuda, mas nunca garante vitória.
+👉 *Acompanhe tudo:* Treinos em andamento e habilidades ativas (com contagem regressiva) aparecem no seu \`!gold\`.`;
+
         const guias = {
             // 🪙 CATEGORIA: ECONOMIA & JOGOS
             menugold: `╔═══════════════════════════════════════╗
@@ -146,15 +160,15 @@ module.exports = {
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O shopping center do Leicybot-.
 🌊 *Como funciona?* Digite \`!loja\` para ver a vitrine completa. Para comprar, use \`!comprar [nome_do_item]\`.
-💎 *Tipos de Mercadoria:* Títulos (Lendário/Ouro/Prata, limite de donos por grupo, 1 semana de validade, *só 1 comprado por vez*) e itens utilitários: Escudo, Seguro Parcial, Recarga Rápida, Cofre Blindado, Isca Especial e Sorte Grande.
+💎 *Tipos de Mercadoria:* Títulos (Lendário/Ouro/Prata, limite de donos por grupo, 1 semana de validade, *só 1 comprado por vez*), itens utilitários: Escudo, Seguro Parcial, Recarga Rápida, Cofre Blindado, Isca Especial e Sorte Grande, e os treinos pro \`!duelo\` (Marujo/Corsário/Kraken — veja \`!ajuda treino\`).
 👉 *Nota:* O título especial (concedido pelo dono) é um slot separado e não conta nesse limite de 1.`,
 
             comprar: `╔═══════════════════════════════════════╗
           🛒  𝗚𝗨𝗜𝗔: !comprar  🛒
 ╚═══════════════════════════════════════╝
 💧 *O que é?* O caixa da \`!loja\`.
-🌊 *Como usar:* \`!comprar [nome_do_item]\` — funciona tanto para itens utilitários (escudo, seguroparcial, etc) quanto para títulos.
-⚠️ *Nota:* Só é possível ter 1 título comprado por vez — venda o atual com \`!vendertitulo\` antes de trocar.`,
+🌊 *Como usar:* \`!comprar [nome_do_item]\` — funciona para itens utilitários (escudo, seguroparcial, etc), títulos e treinos (marujo, corsario, kraken).
+⚠️ *Nota:* Só é possível ter 1 título comprado por vez — venda o atual com \`!vendertitulo\` antes de trocar. Treinos são diferentes: até 3 podem estar em andamento ao mesmo tempo.`,
 
             vendertitulo: `╔═══════════════════════════════════════╗
           🎭  𝗚𝗨𝗜𝗔: !vendertitulo  🎭
@@ -173,8 +187,11 @@ module.exports = {
 ╚═══════════════════════════════════════╝
 💧 *O que é?* Resolver as diferenças no soco virtual valendo dinheiro!
 🌊 *Como usar:* \`!duelo @membro [valor_da_aposta]\` (ou responda a mensagem dele).
-🤖 *O Combate:* O bot cria uma cena cômica e decide quem venceu na base da sorte pura. O vencedor leva todos os Golds da aposta e o perdedor sai machucado e falido.
+🤖 *O Combate:* Chance base de 50% pra cada lado, ajustada pelos bônus das habilidades ativas de cada um (veja \`!ajuda treino\`) — teto de segurança entre 15% e 85%, então ninguém vira imbatível só por treinar. O vencedor leva todos os Golds da aposta e o perdedor sai machucado e falido.
 ⚠️ *Requisito:* Ambos os brigões precisam ter a quantia da aposta em mãos para o duelo começar.`,
+
+            treino: guiaTreino,
+            habilidades: guiaTreino,
 
             casar: `╔═══════════════════════════════════════╗
           💍  𝗚𝗨𝗜𝗔: !casar  💍
@@ -482,7 +499,173 @@ module.exports = {
 ➔ \`!curiosidade/historia\`
 ➔ \`!curiosidade/tecnologia\`
 ➔ \`!curiosidade/natureza\`
-➔ \`!curiosidade/sports\``
+➔ \`!curiosidade/sports\``,
+
+            // 🆕 CATEGORIA: NOVOS COMANDOS DE MÍDIA (Entrega 7)
+            tomp3: `╔═══════════════════════════════════════╗
+          🎧  𝗚𝗨𝗜𝗔: !tomp3  🎧
+╚═══════════════════════════════════════╝
+💧 *O que é?* Extrator de áudio (atalho: \`!toaudio\`).
+🌊 *Como usar?* Responda a um vídeo, uma nota de voz ou uma figurinha digitando \`!tomp3\`. O bot converte a trilha sonora em MP3 e devolve como áudio.`,
+
+            brat: `╔═══════════════════════════════════════╗
+          🍏  𝗚𝗨𝗜𝗔: !brat  🍏
+╚═══════════════════════════════════════╝
+💧 *O que é?* Figurinha no estilo da capa do álbum Brat.
+🌊 *Como usar?* \`!brat texto aqui\`. Gera uma figurinha com fundo verde-limão e o texto em preto, sem precisar responder nada.`,
+
+            meme: `╔═══════════════════════════════════════╗
+          😂  𝗚𝗨𝗜𝗔: !meme  😂
+╚═══════════════════════════════════════╝
+💧 *O que é?* Gerador clássico de memes com texto em cima e embaixo.
+🌊 *Como usar?* Responda uma imagem digitando \`!meme texto de cima | texto de baixo\`. Pode usar só um lado — sem o \`|\`, o texto todo vai embaixo.`,
+
+            emojimix: `╔═══════════════════════════════════════╗
+          🎭  𝗚𝗨𝗜𝗔: !emojimix  🎭
+╚═══════════════════════════════════════╝
+💧 *O que é?* Mistura dois emojis num só, ao estilo Emoji Kitchen do Google.
+🌊 *Como usar?* \`!emojimix 😂+😭\` (dois emojis separados por +). Nem toda combinação existe — se não achar, tenta outra dupla.`,
+
+            traduzir: `╔═══════════════════════════════════════╗
+          🌐  𝗚𝗨𝗜𝗔: !traduzir  🌐
+╚═══════════════════════════════════════╝
+💧 *O que é?* Tradutor rápido de texto.
+🌊 *Como usar?* \`!traduzir [idioma] [texto]\`, ex: \`!traduzir en Bom dia\`. Use o código do idioma de destino (en, es, fr...). Sem origem informada, assume português (ou inglês, se o destino já for português).`,
+
+            tiktok: `╔═══════════════════════════════════════╗
+          🎬  𝗚𝗨𝗜𝗔: !tiktok  🎬
+╚═══════════════════════════════════════╝
+💧 *O que é?* Baixador de vídeos do TikTok.
+🌊 *Como usar?* \`!tiktok [link]\`, colando o link direto do vídeo público que deseja baixar.`,
+
+            instagram: `╔═══════════════════════════════════════╗
+          📸  𝗚𝗨𝗜𝗔: !instagram  📸
+╚═══════════════════════════════════════╝
+💧 *O que é?* Baixador de vídeos/reels do Instagram.
+🌊 *Como usar?* \`!instagram [link]\`, colando o link direto da publicação pública que deseja baixar.`,
+
+            ocr: `╔═══════════════════════════════════════╗
+          📄  𝗚𝗨𝗜𝗔: !ocr  📄
+╚═══════════════════════════════════════╝
+💧 *O que é?* Leitor de texto dentro de imagens.
+🌊 *Como usar?* Responda a uma imagem digitando \`!ocr\`. O bot extrai qualquer texto legível que encontrar nela.`,
+
+            // 🎮 CATEGORIA: JOGOS EM GRUPO (Entrega 8)
+            forca: `╔═══════════════════════════════════════╗
+          🎪  𝗚𝗨𝗜𝗔: !forca  🎪
+╚═══════════════════════════════════════╝
+💧 *O que é?* O clássico jogo da forca, jogado com o grupo inteiro.
+🌊 *Como usar:* \`!forca\` sorteia uma palavra secreta. Use \`!chutar [letra]\` (ou a palavra inteira) para tentar adivinhar.
+📌 *Nota:* Só uma rodada por vez, por grupo. \`!desistirforca\` encerra e revela a palavra. A recompensa em Gold escala com o tamanho da palavra e o número de erros.`,
+
+            chutar: `╔═══════════════════════════════════════╗
+          🔤  𝗚𝗨𝗜𝗔: !chutar  🔤
+╚═══════════════════════════════════════╝
+💧 *O que é?* O palpite da rodada de forca ativa.
+🌊 *Como usar:* \`!chutar [letra]\` para uma letra só, ou \`!chutar [palavra]\` para arriscar a palavra inteira de uma vez. Precisa ter uma \`!forca\` ativa no grupo.`,
+
+            desistirforca: `╔═══════════════════════════════════════╗
+          🏳️  𝗚𝗨𝗜𝗔: !desistirforca  🏳️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Encerra a rodada de forca ativa antes da hora.
+🌊 *Como funciona?* Cancela o jogo e revela a palavra secreta pro grupo, sem distribuir Gold.`,
+
+            jogodavelha: `╔═══════════════════════════════════════╗
+          ❌⭕  𝗚𝗨𝗜𝗔: !jogodavelha  ⭕❌
+╚═══════════════════════════════════════╝
+💧 *O que é?* O tradicional jogo da velha, você contra outro membro do grupo.
+🌊 *Como usar:* \`!jogodavelha @membro\` (ou responda a mensagem dele) para desafiar. O alvo precisa digitar \`!aceitarvelha\` para começar a partida.
+📌 *Nota:* Depois de aceito, joguem com \`!jogar [1-9]\` alternando os turnos. \`!desistirvelha\` encerra a qualquer momento.`,
+
+            aceitarvelha: `╔═══════════════════════════════════════╗
+          ✅  𝗚𝗨𝗜𝗔: !aceitarvelha  ✅
+╚═══════════════════════════════════════╝
+💧 *O que é?* Confirma um desafio pendente de jogo da velha.
+🌊 *Como funciona?* Só quem foi desafiado pode usar. Depois de aceitar, o desafiante (❌) começa jogando com \`!jogar [1-9]\`.`,
+
+            jogar: `╔═══════════════════════════════════════╗
+          🎯  𝗚𝗨𝗜𝗔: !jogar  🎯
+╚═══════════════════════════════════════╝
+💧 *O que é?* A jogada do jogo da velha em andamento.
+🌊 *Como usar:* \`!jogar [1-9]\`, escolhendo a posição livre do tabuleiro (numerado da esquerda pra direita, de cima pra baixo). Só funciona na sua vez.`,
+
+            desistirvelha: `╔═══════════════════════════════════════╗
+          🏳️  𝗚𝗨𝗜𝗔: !desistirvelha  🏳️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Encerra o jogo da velha ativo, seja um desafio pendente ou uma partida em andamento.
+🌊 *Como funciona?* Só o desafiante ou o desafiado podem usar. Não distribui Gold pra ninguém.`,
+
+            ppt: `╔═══════════════════════════════════════╗
+        🪨📄✂️  𝗚𝗨𝗜𝗔: !ppt  ✂️📄🪨
+╚═══════════════════════════════════════╝
+💧 *O que é?* Pedra, Papel e Tesoura contra o próprio bot.
+🌊 *Como usar:* \`!ppt pedra\`, \`!ppt papel\` ou \`!ppt tesoura\`. Resolve na hora — vencendo o bot, você ganha Gold.`,
+
+            verdadeoudesafio: `╔═══════════════════════════════════════╗
+          🎯  𝗚𝗨𝗜𝗔: !verdadeoudesafio  🎯
+╚═══════════════════════════════════════╝
+💧 *O que é?* O clássico Verdade ou Desafio, sorteado pelo bot.
+🌊 *Como usar:* \`!verdadeoudesafio\` sorteia pra você mesmo, ou \`!verdadeoudesafio @membro\` sorteia pra outra pessoa. Ganha Gold só por participar.`,
+
+            emojicharada: `╔═══════════════════════════════════════╗
+          🎭  𝗚𝗨𝗜𝗔: !emojicharada  🎭
+╚═══════════════════════════════════════╝
+💧 *O que é?* Adivinhe o filme/expressão a partir de uma sequência de emojis.
+🌊 *Como usar:* \`!emojicharada\` sorteia a charada. Pra responder, digite a resposta direto no chat (sem !) — quem acertar primeiro leva o Gold.`,
+
+            quiz: `╔═══════════════════════════════════════╗
+          🧠  𝗚𝗨𝗜𝗔: !quiz  🧠
+╚═══════════════════════════════════════╝
+💧 *O que é?* Perguntas de conhecimentos gerais valendo Gold.
+🌊 *Como usar:* \`!quiz\` sorteia a pergunta. Pra responder, digite a resposta direto no chat (sem !) — quem acertar primeiro leva o Gold.`,
+
+            palavraencadeada: `╔═══════════════════════════════════════╗
+          ⛓️  𝗚𝗨𝗜𝗔: !palavraencadeada  ⛓️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Corrente de palavras em grupo — cada palavra nova precisa começar com a última letra da anterior.
+🌊 *Como usar:* \`!palavraencadeada\` sorteia a palavra inicial. Depois, é só mandar palavras soltas no chat (sem !) continuando a corrente — cada uma válida rende Gold. Digite \`!palavraencadeada\` de novo para encerrar.`,
+
+            simon: `╔═══════════════════════════════════════╗
+          🎯  𝗚𝗨𝗜𝗔: !simon  🎯
+╚═══════════════════════════════════════╝
+💧 *O que é?* Jogo de memória: decore uma sequência de cores e repita na ordem certa.
+🌊 *Como usar:* \`!simon\` mostra a sequência da rodada 1. Responda com os nomes das cores separados por espaço (ex: \`vermelho verde azul\`) direto no chat, sem !. Acertando, a próxima rodada vem com uma cor a mais; errando, o jogo acaba — mas o Gold das rodadas já vencidas fica garantido.`,
+
+            adivinhanumero: `╔═══════════════════════════════════════╗
+          🔢  𝗚𝗨𝗜𝗔: !adivinhanumero  🔢
+╚═══════════════════════════════════════╝
+💧 *O que é?* O bot pensa num número entre 1 e 100 e o grupo tenta adivinhar.
+🌊 *Como usar:* \`!adivinhanumero\` inicia a rodada. Pra chutar, é só mandar o número solto no chat (sem !) — o bot avisa se é "maior" ou "menor" até alguém acertar. Quanto menos tentativas até acertar, mais Gold pra quem acertou.`,
+
+            anagrama: `╔═══════════════════════════════════════╗
+          🔀  𝗚𝗨𝗜𝗔: !anagrama  🔀
+╚═══════════════════════════════════════╝
+💧 *O que é?* Uma palavra embaralhada que o grupo precisa desvendar.
+🌊 *Como usar:* \`!anagrama\` sorteia e mostra a palavra embaralhada. Pra responder, digite a palavra correta direto no chat (sem !) — a recompensa em Gold escala com o tamanho da palavra.`,
+
+            digitacao: `╔═══════════════════════════════════════╗
+          ⌨️  𝗚𝗨𝗜𝗔: !digitacao  ⌨️
+╚═══════════════════════════════════════╝
+💧 *O que é?* Corrida de digitação — quem digitar a frase certo primeiro, ganha.
+🌊 *Como usar:* \`!digitacao\` sorteia e mostra a frase. Digite ela exatamente igual, direto no chat (sem !) — vale só a primeira resposta certa, e quanto mais rápido você for, mais Gold ganha.`,
+
+            topbeijos: `╔═══════════════════════════════════════╗
+          💋  𝗚𝗨𝗜𝗔: !topbeijos  💋
+╚═══════════════════════════════════════╝
+💧 *O que é?* O ranking de quem mais recebeu beijos no bot (contagem global, não só deste grupo).
+🌊 *Como usar?* Só digitar \`!topbeijos\` — mostra os 5 primeiros colocados.`,
+
+            topabracos: `╔═══════════════════════════════════════╗
+          🫂  𝗚𝗨𝗜𝗔: !topabracos  🫂
+╚═══════════════════════════════════════╝
+💧 *O que é?* O ranking de quem mais recebeu abraços no bot (contagem global, não só deste grupo).
+🌊 *Como usar?* Só digitar \`!topabracos\` — mostra os 5 primeiros colocados.`,
+
+            casaldomes: `╔═══════════════════════════════════════╗
+          💑  𝗚𝗨𝗜𝗔: !casaldomes  💑
+╚═══════════════════════════════════════╝
+💧 *O que é?* O casal virtual (casados via !casar/!aceitar) com mais carinho somado no momento.
+🌊 *Como funciona?* Soma os beijos e abraços dos dois membros de cada casal e mostra o par com a maior pontuação. Não é um recorte de calendário — é "o casal mais afetuoso agora".`
         };
 
         return guias[cmd] || "🌊 Opa! Não encontrei esse comando na minha enciclopédia. Verifique se digitou o nome correto sem o ponto de exclamação! 💧";
