@@ -182,8 +182,41 @@ app.listen(port, () => {
     console.log(`[SERVER] Monitoramento ativo na porta ${port}`);
 });
 
+// ─── CAMINHO DE PERSISTÊNCIA DA SESSÃO (auth_info) — Volume do Railway ───
+// Se este serviço tiver um Volume do Railway anexado, a plataforma expõe
+// automaticamente a variável RAILWAY_VOLUME_MOUNT_PATH com o caminho do
+// disco persistente (ex: "/data"). Quando ela existe, a pasta auth_info
+// passa a viver dentro do volume — que sobrevive a redeploys sozinho, sem
+// precisar mais colar o base64 na WA_SESSION_DATA toda vez que a sessão
+// muda.
+//
+// Testamos a gravação de verdade antes de confiar no volume: se a variável
+// não existir, ou existir mas o caminho não estiver de fato gravável nesse
+// boot (ex: volume mal configurado), cai automaticamente pro comportamento
+// de sempre — pasta local dentro do projeto + restauração via
+// WA_SESSION_DATA em base64. Ou seja, pra quem não configurar um volume no
+// Railway, nada muda.
+function resolverPastaAuth() {
+    const caminhoVolume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    if (caminhoVolume) {
+        try {
+            const arquivoTeste = path.join(caminhoVolume, '.escrita_teste');
+            fs.writeFileSync(arquivoTeste, 'ok');
+            fs.unlinkSync(arquivoTeste);
+            const pastaNoVolume = path.join(caminhoVolume, 'auth_info');
+            console.log(`[SISTEMA] Volume do Railway detectado e gravável — sessão será persistida em ${pastaNoVolume} (não depende mais só da WA_SESSION_DATA).`);
+            return { pasta: pastaNoVolume, usandoVolume: true };
+        } catch (e) {
+            console.error('[SISTEMA] RAILWAY_VOLUME_MOUNT_PATH está definida mas não consegui gravar nela — caindo de volta pra pasta local + WA_SESSION_DATA.', e.message);
+        }
+    }
+    return { pasta: path.join(__dirname, 'auth_info'), usandoVolume: false };
+}
+
+const { pasta: PASTA_AUTH, usandoVolume: USANDO_VOLUME_RAILWAY } = resolverPastaAuth();
+
 function limparSessaoInvalida() {
-    const pastaAuth = path.join(__dirname, 'auth_info');
+    const pastaAuth = PASTA_AUTH;
     if (fs.existsSync(pastaAuth)) {
         try {
             if (botSocket) {
@@ -203,7 +236,7 @@ function limparSessaoInvalida() {
 }
 
 async function iniciarBot() {
-    const pastaAuth = path.join(__dirname, 'auth_info');
+    const pastaAuth = PASTA_AUTH;
 
     if (process.env.WA_SESSION_DATA && !fs.existsSync(pastaAuth)) {
         try {
@@ -213,13 +246,13 @@ async function iniciarBot() {
             Object.keys(sessionData).forEach(file => {
                 fs.writeFileSync(path.join(pastaAuth, file), JSON.stringify(sessionData[file]));
             });
-            console.log('[SISTEMA] Sessão restaurada com sucesso a partir das Variáveis de Ambiente!');
+            console.log('[SISTEMA] Sessão restaurada com sucesso a partir das Variáveis de Ambiente' + (USANDO_VOLUME_RAILWAY ? ' — e já gravada no volume, então os próximos boots nem vão precisar mais dela.' : '!'));
         } catch (e) {
             console.error('[ERRO VARIÁVEL SESSÃO]: Dados inválidos ou corrompidos na variável.', e.message);
         }
     }
 
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState(pastaAuth);
     const version = await obterVersaoProtocolo();
     console.log(`[WHATSAPP] Utilizando a versão de protocolo: ${version.join('.')}`);
 
@@ -268,7 +301,9 @@ async function iniciarBot() {
                                 document: Buffer.from(base64String, 'utf-8'),
                                 fileName: `wa_session_data_${new Date().toISOString().slice(0, 16).replace(':', 'h')}.txt`,
                                 mimetype: 'text/plain',
-                                caption: '🔐 Backup automático da sessão do WhatsApp. Se o bot cair e não reconectar sozinho, cole o conteúdo desse arquivo na variável WA_SESSION_DATA do Render.'
+                                caption: USANDO_VOLUME_RAILWAY
+                                    ? '🔐 Backup automático da sessão do WhatsApp (redundante — a sessão principal já vive no volume do Railway). Só use este arquivo se o volume for perdido: cole o conteúdo na variável WA_SESSION_DATA.'
+                                    : '🔐 Backup automático da sessão do WhatsApp. Se o bot cair e não reconectar sozinho, cole o conteúdo desse arquivo na variável WA_SESSION_DATA do Railway.'
                             });
                             ultimoConteudoBackup = base64String;
                             console.log('[SISTEMA] Backup de sessão enviado automaticamente pro privado do dono.');
