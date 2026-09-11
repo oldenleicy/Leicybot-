@@ -1,0 +1,13 @@
+# Instala o python3 no ambiente de build/execução do Railway.
+#
+# Por quê: o yt-dlp (baixado automaticamente pelo pacote youtube-dl-exec)
+# é um script Python — precisa de um "python3" disponível no sistema pra
+# rodar. O Railway detecta este projeto como Node.js puro e não instala
+# Python nenhum por padrão, então !play, !video, !tiktok e !instagram
+# falhavam sempre com: env: 'python3': No such file or directory
+#
+# Isso só ADICIONA o python3 ao setup do build — não troca nem remove nada
+# do que o Railway já detecta sozinho pro Node.js (nodejs, npm, etc.).
+
+[phases.setup]
+aptPkgs = ["python3"]
