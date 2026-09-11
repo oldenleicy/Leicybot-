@@ -49,6 +49,40 @@ const STICKER_AUTOR = "O.X & LiL GTA";
 // continua normal).
 const FONT_PATH = path.join(__dirname, 'assets', 'font.ttf');
 
+// ─── CHECAGEM DE CAPACIDADES DO FFMPEG (no boot) ───
+// !attp, !s-, !brat e !meme dependem do filtro "drawtext" (texto desenhado)
+// e o !attp especificamente depende do encoder "libvpx" (pra gerar webm com
+// transparência). Roda uma vez no boot e só LOGA o resultado — não trava a
+// inicialização do bot. Assim, se um binário de ffmpeg incompleto for usado
+// no servidor, isso aparece claro no log em vez de gerar mensagens de erro
+// confusas (tipo "confirme o font.ttf") toda vez que alguém usar o comando.
+execFile(ffmpegPath, ['-hide_banner', '-filters'], (erro, stdout) => {
+    if (erro) {
+        console.error('[MIDIA] Não consegui checar os filtros do ffmpeg no boot:', erro.message);
+        return;
+    }
+    if (!/drawtext/i.test(stdout)) {
+        console.error('[MIDIA] ⚠️ O binário do ffmpeg em uso NÃO tem o filtro "drawtext" — !attp, !s-, !brat e !meme vão falhar até isso ser corrigido (binário do ffmpeg incompleto).');
+    }
+});
+execFile(ffmpegPath, ['-hide_banner', '-encoders'], (erro, stdout) => {
+    if (erro) return;
+    if (!/libvpx/i.test(stdout)) {
+        console.error('[MIDIA] ⚠️ O binário do ffmpeg em uso NÃO tem o encoder "libvpx" — !attp (figurinha animada com transparência) vai falhar até isso ser corrigido.');
+    }
+});
+
+// Monta uma mensagem de erro mais útil pro usuário a partir do erro real do
+// ffmpeg, em vez de sempre culpar o font.ttf (que na maioria das falhas nem
+// é o problema).
+function mensagemErroFfmpeg(erro) {
+    const texto = String(erro?.message || erro || '');
+    if (/font/i.test(texto)) {
+        return " Confirme que existe o arquivo modulos/assets/font.ttf no projeto.";
+    }
+    return " Tenta de novo em alguns segundos — se persistir, avisa o dono do bot.";
+}
+
 // Escapa caracteres especiais da sintaxe de FILTRO do ffmpeg (drawtext).
 // Isso não é escaping de shell — usamos execFile (sem shell) justamente
 // para não correr risco de injeção de comando vinda de texto do usuário.
@@ -225,7 +259,7 @@ async function criarFigurinha(sock, msg, from, legenda) {
         await sock.sendMessage(from, { sticker: bufferFigurinha }, { quoted: msg });
     } catch (erro) {
         console.error('[STICKER] Erro:', erro.message || erro);
-        const dica = legenda ? " Se a legenda for o problema, confirme que existe o arquivo modulos/assets/font.ttf no projeto." : "";
+        const dica = legenda ? mensagemErroFfmpeg(erro) : "";
         await sock.sendMessage(from, { text: `❌ Falha ao criar a figurinha.${dica}` }, { quoted: msg });
     } finally {
         if (arquivoComLegenda && fs.existsSync(arquivoComLegenda)) fs.unlinkSync(arquivoComLegenda);
@@ -261,12 +295,17 @@ module.exports = async (sock, msg, comando, args) => {
 
             await sock.sendMessage(from, { text: "⏳ Gerando escrita animada..." }, { quoted: msg });
 
-            const attpTmp = path.join(__dirname, `attp_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
+            // .webm (não .mp4): o container/codec do mp4 (libx264) NÃO suporta
+            // canal de transparência (pixel format yuva420p) — é por isso que o
+            // !attp falhava ou travava. webm com o encoder libvpx suporta
+            // transparência de verdade; "-auto-alt-ref 0" é obrigatório pro
+            // libvpx conseguir codificar alpha corretamente.
+            const attpTmp = path.join(__dirname, `attp_${Date.now()}_${Math.random().toString(36).slice(2)}.webm`);
             try {
                 const textoSeguroAttp = escaparParaDrawtext(busca);
                 const filtroAttp = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguroAttp}':fontsize=64:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2,hue=h=360*t/2.5:s=2`;
 
-                await rodarFfmpeg(['-y', '-f', 'lavfi', '-i', 'color=c=black@0.0:s=512x512:d=2.5:r=20', '-vf', filtroAttp, '-pix_fmt', 'yuva420p', attpTmp]);
+                await rodarFfmpeg(['-y', '-f', 'lavfi', '-i', 'color=c=black@0.0:s=512x512:d=2.5:r=20', '-vf', filtroAttp, '-c:v', 'libvpx', '-pix_fmt', 'yuva420p', '-auto-alt-ref', '0', attpTmp]);
 
                 const stickerAttp = new Sticker(attpTmp, {
                     pack: STICKER_PACK,
@@ -277,7 +316,7 @@ module.exports = async (sock, msg, comando, args) => {
                 await sock.sendMessage(from, { sticker: bufferAttp }, { quoted: msg });
             } catch (erro) {
                 console.error('[ATTP] Erro:', erro.message || erro);
-                await sock.sendMessage(from, { text: "❌ Falha ao gerar a figurinha animada. Confirme que existe o arquivo modulos/assets/font.ttf no projeto." }, { quoted: msg });
+                await sock.sendMessage(from, { text: `❌ Falha ao gerar a figurinha animada.${mensagemErroFfmpeg(erro)}` }, { quoted: msg });
             } finally {
                 if (fs.existsSync(attpTmp)) fs.unlinkSync(attpTmp);
             }
@@ -644,7 +683,7 @@ module.exports = async (sock, msg, comando, args) => {
                 await sock.sendMessage(from, { sticker: bufferBrat }, { quoted: msg });
             } catch (erro) {
                 console.error('[BRAT] Erro:', erro.message || erro);
-                await sock.sendMessage(from, { text: "❌ Falha ao gerar a figurinha. Confirme que existe o arquivo modulos/assets/font.ttf no projeto." }, { quoted: msg });
+                await sock.sendMessage(from, { text: `❌ Falha ao gerar a figurinha.${mensagemErroFfmpeg(erro)}` }, { quoted: msg });
             } finally {
                 if (fs.existsSync(bratTmp)) fs.unlinkSync(bratTmp);
             }
@@ -677,7 +716,7 @@ module.exports = async (sock, msg, comando, args) => {
                 await sock.sendMessage(from, { image: bufferMemeFinal, caption: "✅ Meme gerado!" }, { quoted: msg });
             } catch (erro) {
                 console.error('[MEME] Erro:', erro.message || erro);
-                await sock.sendMessage(from, { text: "❌ Falha ao gerar o meme. Confirme que existe o arquivo modulos/assets/font.ttf no projeto." }, { quoted: msg });
+                await sock.sendMessage(from, { text: `❌ Falha ao gerar o meme.${mensagemErroFfmpeg(erro)}` }, { quoted: msg });
             } finally {
                 if (fs.existsSync(entradaMeme)) fs.unlinkSync(entradaMeme);
                 if (fs.existsSync(saidaMeme)) fs.unlinkSync(saidaMeme);
