@@ -12,7 +12,7 @@
 // Com isso, todos os jogos do mapa de implementação estão implementados —
 // a Entrega 13 não mexe neste arquivo (só economia.js, diversao.js,
 // usuarioPadrao.js e comandos.js).
-const { resolverIdentidade, obterAlvo } = require('./jidUtils');
+const { resolverIdentidade, participanteBruto, obterAlvo } = require('./jidUtils');
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const { enviarComMidiaOpcional } = require('./midiaOpcional');
 
@@ -29,6 +29,48 @@ const { enviarComMidiaOpcional } = require('./midiaOpcional');
 // ══════════════════════════════════════════════════════════════════
 const jogosAtivos = new Map(); // groupJid -> estado do jogo ativo
 const TEMPO_EXPIRACAO_MS = 10 * 60 * 1000; // 10 min sem jogada = jogo abandonado
+
+// ══════════════════════════════════════════════════════════════════
+// DESAFIOS PENDENTES (Velha / Batalha Naval) — v3
+// Antes, desafiar alguém já ocupava a vaga única de "jogo ativo" do
+// grupo, mesmo sem ninguém ter aceitado ainda — isso travava QUALQUER
+// outro jogo até esse desafio expirar, ser aceito ou recusado. Agora os
+// desafios pendentes ficam numa lista à parte, que não disputa espaço
+// com jogosAtivos: várias pessoas podem desafiar ao mesmo tempo. Só
+// quando um desafio é ACEITO ele tenta ocupar a vaga de jogo do grupo —
+// se já tiver outro jogo rolando, quem aceitou precisa tentar de novo
+// depois que esse outro terminar (não entra em fila automática).
+// ══════════════════════════════════════════════════════════════════
+const desafiosPendentes = new Map(); // groupJid -> array de desafios pendentes
+const TEMPO_EXPIRACAO_DESAFIO_MS = 10 * 60 * 1000; // 10 min sem aceitar = desafio expira
+
+function obterDesafiosPendentes(groupJid) {
+    const lista = desafiosPendentes.get(groupJid) || [];
+    const validos = lista.filter(d => Date.now() - d.criadoEm <= TEMPO_EXPIRACAO_DESAFIO_MS);
+    desafiosPendentes.set(groupJid, validos);
+    return validos;
+}
+
+// Checagem de admin (mesmo padrão usado em adm.js, duplicado aqui de
+// propósito — cada módulo resolve isso sozinho neste projeto). Usada
+// pelo !cancelarjogo e pelos !desistirX, pra deixar um admin do grupo
+// encerrar qualquer desafio/jogo sem precisar esperar ele expirar.
+async function ehAdmin(sock, from, sender, senderBruto) {
+    try {
+        const groupMetadata = await sock.groupMetadata(from);
+        const adms = [];
+        groupMetadata.participants.forEach(p => {
+            if (p.admin !== null) {
+                adms.push(p.id);
+                const alt = p.phoneNumber || p.pn || p.jid;
+                if (alt && alt !== p.id) adms.push(alt);
+            }
+        });
+        return adms.includes(sender) || adms.includes(senderBruto);
+    } catch (e) {
+        return false; // não deu pra confirmar — erra pro lado seguro (nega admin)
+    }
+}
 
 function normalizar(texto) {
     return (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -471,6 +513,7 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
     try {
         const from = msg.key.remoteJid;
         const sender = resolverIdentidade(msg.key);
+        const senderBruto = participanteBruto(msg.key);
         const isGroup = from.endsWith('@g.us');
 
         if (!isGroup) {
@@ -575,39 +618,55 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
             // ── JOGO DA VELHA ──────────────────────────────────────
             case 'jogodavelha': {
-                const jogoExistente = obterJogoAtivo(from);
-                if (jogoExistente) {
-                    return sock.sendMessage(from, { text: `❌ Já tem um jogo de *${NOME_JOGO[jogoExistente.tipo] || jogoExistente.tipo}* rolando neste grupo. Espere terminar!` }, { quoted: msg });
-                }
-
                 const adversario = obterAlvo(msg);
                 if (!adversario) return sock.sendMessage(from, { text: "❌ Marque ou responda quem você quer desafiar! Ex: `!jogodavelha @membro`" }, { quoted: msg });
                 if (adversario === sender) return sock.sendMessage(from, { text: "🥴 Jogar sozinho contra si mesmo não tem muita graça!" }, { quoted: msg });
 
-                const jogo = {
-                    tipo: 'velha', desafiante: sender, desafiado: adversario,
-                    aceito: false, tabuleiro: Array(9).fill(null), vez: null,
-                    ultimaAtividade: Date.now()
-                };
-                jogosAtivos.set(from, jogo);
+                const pendentesVelha = obterDesafiosPendentes(from);
+                if (pendentesVelha.some(d => d.tipo === 'velha' && d.desafiante === sender && d.desafiado === adversario)) {
+                    return sock.sendMessage(from, { text: "❌ Você já desafiou essa pessoa pro jogo da velha — espere a resposta ou cancele com *!desistirvelha*." }, { quoted: msg });
+                }
+                pendentesVelha.push({ tipo: 'velha', desafiante: sender, desafiado: adversario, criadoEm: Date.now() });
 
                 return sock.sendMessage(from, {
-                    text: `❌⭕ *DESAFIO DO JOGO DA VELHA!*\n@${adversario.split('@')[0]}, você foi desafiado por @${sender.split('@')[0]}!\n\nDigite *!aceitarvelha* para aceitar (ou ignore e o desafio expira sozinho).`,
+                    text: `❌⭕ *DESAFIO DO JOGO DA VELHA!*\n@${adversario.split('@')[0]}, você foi desafiado por @${sender.split('@')[0]}!\n\nDigite *!aceitarvelha* para aceitar (ou ignore e o desafio expira sozinho). Se já tiver outro jogo rolando no grupo na hora de aceitar, é só tentar de novo depois que ele acabar.`,
                     mentions: [sender, adversario]
                 }, { quoted: msg });
             }
 
             case 'aceitarvelha': {
-                const jogo = obterJogoAtivo(from);
-                if (!jogo || jogo.tipo !== 'velha') {
-                    return sock.sendMessage(from, { text: "❌ Não há nenhum desafio de jogo da velha pendente." }, { quoted: msg });
-                }
-                if (jogo.aceito) return sock.sendMessage(from, { text: "❌ Esse desafio já está em andamento!" }, { quoted: msg });
-                if (sender !== jogo.desafiado) return sock.sendMessage(from, { text: "❌ Esse desafio não é seu para aceitar!" }, { quoted: msg });
+                const pendentesVelha = obterDesafiosPendentes(from);
+                const meusDesafiosVelha = pendentesVelha.filter(d => d.tipo === 'velha' && d.desafiado === sender);
 
-                jogo.aceito = true;
-                jogo.vez = jogo.desafiante;
-                tocarAtividade(jogo);
+                if (meusDesafiosVelha.length === 0) {
+                    return sock.sendMessage(from, { text: "❌ Não há nenhum desafio de jogo da velha pendente para você." }, { quoted: msg });
+                }
+
+                let desafioVelhaEscolhido = meusDesafiosVelha[0];
+                if (meusDesafiosVelha.length > 1) {
+                    const alvoEscolhido = obterAlvo(msg);
+                    if (!alvoEscolhido) {
+                        const nomes = meusDesafiosVelha.map(d => `@${d.desafiante.split('@')[0]}`).join(', ');
+                        return sock.sendMessage(from, { text: `❌ Você tem mais de um desafio de jogo da velha pendente (${nomes}). Marque quem quer aceitar: \`!aceitarvelha @pessoa\`.`, mentions: meusDesafiosVelha.map(d => d.desafiante) }, { quoted: msg });
+                    }
+                    const encontrado = meusDesafiosVelha.find(d => d.desafiante === alvoEscolhido);
+                    if (!encontrado) return sock.sendMessage(from, { text: "❌ Você não tem desafio de jogo da velha pendente com essa pessoa." }, { quoted: msg });
+                    desafioVelhaEscolhido = encontrado;
+                }
+
+                const jogoExistenteVelha = obterJogoAtivo(from);
+                if (jogoExistenteVelha) {
+                    return sock.sendMessage(from, { text: `❌ Já tem um jogo de *${NOME_JOGO[jogoExistenteVelha.tipo] || jogoExistenteVelha.tipo}* rolando neste grupo. Seu desafio continua pendente — use *!aceitarvelha* de novo assim que esse jogo terminar!` }, { quoted: msg });
+                }
+
+                pendentesVelha.splice(pendentesVelha.indexOf(desafioVelhaEscolhido), 1);
+
+                const jogo = {
+                    tipo: 'velha', desafiante: desafioVelhaEscolhido.desafiante, desafiado: sender,
+                    aceito: true, tabuleiro: Array(9).fill(null), vez: desafioVelhaEscolhido.desafiante,
+                    ultimaAtividade: Date.now()
+                };
+                jogosAtivos.set(from, jogo);
 
                 return sock.sendMessage(from, {
                     text: `✅ Desafio aceito! @${jogo.desafiante.split('@')[0]} é ❌ e @${jogo.desafiado.split('@')[0]} é ⭕.\n\n${renderizarVelha(jogo.tabuleiro)}\n\nVez de @${jogo.vez.split('@')[0]} (❌). Use *!jogar [1-9]*.`,
@@ -667,14 +726,33 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
             case 'desistirvelha': {
                 const jogo = obterJogoAtivo(from);
-                if (!jogo || jogo.tipo !== 'velha') {
-                    return sock.sendMessage(from, { text: "❌ Não há nenhum jogo da velha ativo para desistir." }, { quoted: msg });
+                const souParticipanteAtivoVelha = !!jogo && jogo.tipo === 'velha' && (sender === jogo.desafiante || sender === jogo.desafiado);
+                const souAdminVelha = await ehAdmin(sock, from, sender, senderBruto);
+
+                if (jogo && jogo.tipo === 'velha' && (souParticipanteAtivoVelha || souAdminVelha)) {
+                    jogosAtivos.delete(from);
+                    return sock.sendMessage(from, { text: `🏳️ Jogo da velha encerrado${souParticipanteAtivoVelha ? ' por desistência' : ' por um administrador'}. 🌊` }, { quoted: msg });
                 }
-                if (sender !== jogo.desafiante && sender !== jogo.desafiado) {
+
+                // Não sou participante do jogo ativo (se houver um) — talvez eu tenha um desafio pendente próprio
+                const pendentesVelha = obterDesafiosPendentes(from);
+                const idxMeuDesafio = pendentesVelha.findIndex(d => d.tipo === 'velha' && (d.desafiante === sender || d.desafiado === sender));
+                if (idxMeuDesafio !== -1) {
+                    pendentesVelha.splice(idxMeuDesafio, 1);
+                    return sock.sendMessage(from, { text: "🚫 Desafio de jogo da velha cancelado." }, { quoted: msg });
+                }
+
+                // Nada meu pra cancelar — admin ainda pode limpar desafios pendentes de outras pessoas
+                const desafiosVelhaRestantes = pendentesVelha.filter(d => d.tipo === 'velha');
+                if (desafiosVelhaRestantes.length > 0 && souAdminVelha) {
+                    desafiosPendentes.set(from, pendentesVelha.filter(d => d.tipo !== 'velha'));
+                    return sock.sendMessage(from, { text: `🚫 ${desafiosVelhaRestantes.length} desafio(s) de jogo da velha pendente(s) cancelado(s) por um administrador.` }, { quoted: msg });
+                }
+
+                if (jogo && jogo.tipo === 'velha') {
                     return sock.sendMessage(from, { text: "❌ Esse jogo não é seu." }, { quoted: msg });
                 }
-                jogosAtivos.delete(from);
-                return sock.sendMessage(from, { text: "🏳️ Jogo da velha encerrado por desistência. 🌊" }, { quoted: msg });
+                return sock.sendMessage(from, { text: "❌ Não há nenhum jogo ou desafio de jogo da velha ativo para cancelar." }, { quoted: msg });
             }
 
             // ── PEDRA, PAPEL E TESOURA (vs bot) ────────────────────
@@ -732,7 +810,7 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     respostas: escolhida.respostas.map(normalizar),
                     respostaExibida: escolhida.exibida,
                     recompensa: RECOMPENSA_CHARADA[escolhida.dificuldade] || 20,
-                    ultimaAtividade: Date.now()
+                    iniciadoPor: sender, ultimaAtividade: Date.now()
                 };
                 jogosAtivos.set(from, jogo);
 
@@ -752,7 +830,7 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     respostas: escolhida.respostas.map(normalizar),
                     respostaExibida: escolhida.exibida,
                     recompensa: RECOMPENSA_QUIZ[escolhida.dificuldade] || 20,
-                    ultimaAtividade: Date.now()
+                    iniciadoPor: sender, ultimaAtividade: Date.now()
                 };
                 jogosAtivos.set(from, jogo);
 
@@ -777,7 +855,7 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     ultimaPalavraExibida: palavraInicial,
                     palavrasUsadas: new Set([normalizar(palavraInicial)]),
                     totalPalavras: 1,
-                    ultimaAtividade: Date.now()
+                    iniciadoPor: sender, ultimaAtividade: Date.now()
                 };
                 jogosAtivos.set(from, jogo);
 
@@ -1089,43 +1167,59 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
             // ── BATALHA NAVAL ─────────────────────────────────────────────
             case 'batalhanaval': {
-                const jogoExistente = obterJogoAtivo(from);
-                if (jogoExistente) {
-                    return sock.sendMessage(from, { text: `❌ Já tem um jogo de *${NOME_JOGO[jogoExistente.tipo] || jogoExistente.tipo}* rolando neste grupo. Espere terminar!` }, { quoted: msg });
-                }
-
                 const adversarioBatalha = obterAlvo(msg);
                 if (!adversarioBatalha) return sock.sendMessage(from, { text: "❌ Marque ou responda quem você quer desafiar! Ex: `!batalhanaval @membro`" }, { quoted: msg });
                 if (adversarioBatalha === sender) return sock.sendMessage(from, { text: "🥴 Jogar sozinho contra si mesmo não tem muita graça!" }, { quoted: msg });
 
-                const jogo = {
-                    tipo: 'batalhanaval', desafiante: sender, desafiado: adversarioBatalha,
-                    aceito: false, vez: null, frotas: null,
-                    ultimaAtividade: Date.now()
-                };
-                jogosAtivos.set(from, jogo);
+                const pendentesBatalha = obterDesafiosPendentes(from);
+                if (pendentesBatalha.some(d => d.tipo === 'batalhanaval' && d.desafiante === sender && d.desafiado === adversarioBatalha)) {
+                    return sock.sendMessage(from, { text: "❌ Você já desafiou essa pessoa pra Batalha Naval — espere a resposta ou cancele com *!desistirbatalha*." }, { quoted: msg });
+                }
+                pendentesBatalha.push({ tipo: 'batalhanaval', desafiante: sender, desafiado: adversarioBatalha, criadoEm: Date.now() });
 
                 return sock.sendMessage(from, {
-                    text: `🚢 *DESAFIO DE BATALHA NAVAL!*\n@${adversarioBatalha.split('@')[0]}, você foi desafiado por @${sender.split('@')[0]}!\n\nCada um recebe uma frota escondida (🛳️ Porta-Aviões, 🚤 Cruzador, 🤿 Submarino) num tabuleiro ${TAMANHO_TABULEIRO_BATALHA}x${TAMANHO_TABULEIRO_BATALHA}. Digite *!aceitarbatalha* para aceitar.`,
+                    text: `🚢 *DESAFIO DE BATALHA NAVAL!*\n@${adversarioBatalha.split('@')[0]}, você foi desafiado por @${sender.split('@')[0]}!\n\nCada um recebe uma frota escondida (🛳️ Porta-Aviões, 🚤 Cruzador, 🤿 Submarino) num tabuleiro ${TAMANHO_TABULEIRO_BATALHA}x${TAMANHO_TABULEIRO_BATALHA}. Digite *!aceitarbatalha* para aceitar. Se já tiver outro jogo rolando no grupo na hora de aceitar, é só tentar de novo depois que ele acabar.`,
                     mentions: [sender, adversarioBatalha]
                 }, { quoted: msg });
             }
 
             case 'aceitarbatalha': {
-                const jogo = obterJogoAtivo(from);
-                if (!jogo || jogo.tipo !== 'batalhanaval') {
-                    return sock.sendMessage(from, { text: "❌ Não há nenhum desafio de batalha naval pendente." }, { quoted: msg });
-                }
-                if (jogo.aceito) return sock.sendMessage(from, { text: "❌ Esse desafio já está em andamento!" }, { quoted: msg });
-                if (sender !== jogo.desafiado) return sock.sendMessage(from, { text: "❌ Esse desafio não é seu para aceitar!" }, { quoted: msg });
+                const pendentesBatalha = obterDesafiosPendentes(from);
+                const meusDesafiosBatalha = pendentesBatalha.filter(d => d.tipo === 'batalhanaval' && d.desafiado === sender);
 
-                jogo.frotas = {
-                    [jogo.desafiante]: posicionarFrota(),
-                    [jogo.desafiado]: posicionarFrota()
+                if (meusDesafiosBatalha.length === 0) {
+                    return sock.sendMessage(from, { text: "❌ Não há nenhum desafio de batalha naval pendente para você." }, { quoted: msg });
+                }
+
+                let desafioBatalhaEscolhido = meusDesafiosBatalha[0];
+                if (meusDesafiosBatalha.length > 1) {
+                    const alvoEscolhido = obterAlvo(msg);
+                    if (!alvoEscolhido) {
+                        const nomes = meusDesafiosBatalha.map(d => `@${d.desafiante.split('@')[0]}`).join(', ');
+                        return sock.sendMessage(from, { text: `❌ Você tem mais de um desafio de batalha naval pendente (${nomes}). Marque quem quer aceitar: \`!aceitarbatalha @pessoa\`.`, mentions: meusDesafiosBatalha.map(d => d.desafiante) }, { quoted: msg });
+                    }
+                    const encontrado = meusDesafiosBatalha.find(d => d.desafiante === alvoEscolhido);
+                    if (!encontrado) return sock.sendMessage(from, { text: "❌ Você não tem desafio de batalha naval pendente com essa pessoa." }, { quoted: msg });
+                    desafioBatalhaEscolhido = encontrado;
+                }
+
+                const jogoExistenteBatalha = obterJogoAtivo(from);
+                if (jogoExistenteBatalha) {
+                    return sock.sendMessage(from, { text: `❌ Já tem um jogo de *${NOME_JOGO[jogoExistenteBatalha.tipo] || jogoExistenteBatalha.tipo}* rolando neste grupo. Seu desafio continua pendente — use *!aceitarbatalha* de novo assim que esse jogo terminar!` }, { quoted: msg });
+                }
+
+                pendentesBatalha.splice(pendentesBatalha.indexOf(desafioBatalhaEscolhido), 1);
+
+                const jogo = {
+                    tipo: 'batalhanaval', desafiante: desafioBatalhaEscolhido.desafiante, desafiado: sender,
+                    aceito: true, vez: desafioBatalhaEscolhido.desafiante,
+                    frotas: {
+                        [desafioBatalhaEscolhido.desafiante]: posicionarFrota(),
+                        [sender]: posicionarFrota()
+                    },
+                    ultimaAtividade: Date.now()
                 };
-                jogo.aceito = true;
-                jogo.vez = jogo.desafiante;
-                tocarAtividade(jogo);
+                jogosAtivos.set(from, jogo);
 
                 return sock.sendMessage(from, {
                     text: `✅ Desafio aceito! As duas frotas foram posicionadas em segredo.\n\nVez de @${jogo.vez.split('@')[0]}. Mire o tabuleiro de @${jogo.desafiado.split('@')[0]} com *!atirar [coordenada]*. Ex: \`!atirar C4\`\n\n${renderizarRadarBatalha(jogo.frotas[jogo.desafiado])}`,
@@ -1204,14 +1298,57 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
 
             case 'desistirbatalha': {
                 const jogo = obterJogoAtivo(from);
-                if (!jogo || jogo.tipo !== 'batalhanaval') {
-                    return sock.sendMessage(from, { text: "❌ Não há nenhuma batalha naval ativa para desistir." }, { quoted: msg });
+                const souParticipanteAtivoBatalha = !!jogo && jogo.tipo === 'batalhanaval' && (sender === jogo.desafiante || sender === jogo.desafiado);
+                const souAdminBatalha = await ehAdmin(sock, from, sender, senderBruto);
+
+                if (jogo && jogo.tipo === 'batalhanaval' && (souParticipanteAtivoBatalha || souAdminBatalha)) {
+                    jogosAtivos.delete(from);
+                    return sock.sendMessage(from, { text: `🏳️ Batalha naval encerrada${souParticipanteAtivoBatalha ? ' por desistência' : ' por um administrador'}. As frotas afundam nas sombras... 🌊` }, { quoted: msg });
                 }
-                if (sender !== jogo.desafiante && sender !== jogo.desafiado) {
+
+                const pendentesBatalha = obterDesafiosPendentes(from);
+                const idxMeuDesafio = pendentesBatalha.findIndex(d => d.tipo === 'batalhanaval' && (d.desafiante === sender || d.desafiado === sender));
+                if (idxMeuDesafio !== -1) {
+                    pendentesBatalha.splice(idxMeuDesafio, 1);
+                    return sock.sendMessage(from, { text: "🚫 Desafio de batalha naval cancelado." }, { quoted: msg });
+                }
+
+                const desafiosBatalhaRestantes = pendentesBatalha.filter(d => d.tipo === 'batalhanaval');
+                if (desafiosBatalhaRestantes.length > 0 && souAdminBatalha) {
+                    desafiosPendentes.set(from, pendentesBatalha.filter(d => d.tipo !== 'batalhanaval'));
+                    return sock.sendMessage(from, { text: `🚫 ${desafiosBatalhaRestantes.length} desafio(s) de batalha naval pendente(s) cancelado(s) por um administrador.` }, { quoted: msg });
+                }
+
+                if (jogo && jogo.tipo === 'batalhanaval') {
                     return sock.sendMessage(from, { text: "❌ Essa batalha não é sua." }, { quoted: msg });
                 }
+                return sock.sendMessage(from, { text: "❌ Não há nenhuma batalha naval ativa ou pendente para cancelar." }, { quoted: msg });
+            }
+
+            // ── CANCELAR JOGO (universal, qualquer tipo) ────────────────
+            // Quem iniciou o jogo (ou desafiante/desafiado, no caso de Velha
+            // e Batalha Naval) pode cancelar a qualquer momento. Um admin do
+            // grupo pode cancelar QUALQUER jogo em andamento, mesmo sem ter
+            // participado — pra não depender de esperar expirar.
+            case 'cancelarjogo': {
+                const jogo = obterJogoAtivo(from);
+                if (!jogo) {
+                    return sock.sendMessage(from, { text: "❌ Não há nenhum jogo ativo neste grupo agora." }, { quoted: msg });
+                }
+
+                const ehDono = jogo.iniciadoPor === sender;
+                const ehParticipanteDesafio = sender === jogo.desafiante || sender === jogo.desafiado;
+
+                if (!ehDono && !ehParticipanteDesafio && !(await ehAdmin(sock, from, sender, senderBruto))) {
+                    return sock.sendMessage(from, { text: "❌ Só quem iniciou esse jogo (ou um admin do grupo) pode cancelar." }, { quoted: msg });
+                }
+
+                if (jogo.timeoutRodada) clearTimeout(jogo.timeoutRodada); // limpa o timer do 30 Segundos, se houver
+                const nomeJogoCancelado = NOME_JOGO[jogo.tipo] || jogo.tipo;
                 jogosAtivos.delete(from);
-                return sock.sendMessage(from, { text: "🏳️ Batalha naval encerrada por desistência. As frotas afundam nas sombras... 🌊" }, { quoted: msg });
+
+                const porAdmin = !ehDono && !ehParticipanteDesafio;
+                return sock.sendMessage(from, { text: `🛑 *${nomeJogoCancelado}* cancelado${porAdmin ? ' por um administrador' : ''}. 🌊` }, { quoted: msg });
             }
 
             default:

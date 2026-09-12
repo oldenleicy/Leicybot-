@@ -1,7 +1,7 @@
 const { downloadContentFromMessage } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 
 // Essas duas dependências são "pesadas" (binários nativos/baixados). Se
 // falharem ao carregar, isso NÃO deve derrubar o bot inteiro — só os
@@ -30,12 +30,24 @@ try {
     console.error('[MIDIA] tesseract.js não carregou:', e.message);
 }
 
-// Tenta importar o ffmpeg-static de forma opcional para evitar quebras se não estiver instalado
+// O binário empacotado pelo ffmpeg-static ficou CONFIRMADO incompleto no
+// Railway (sem o filtro "drawtext" — !attp, !s-, !brat e !meme dependem
+// dele). Por isso agora damos prioridade ao ffmpeg completo do sistema,
+// instalado via nixpacks.toml (nixPkgs inclui "ffmpeg"). Se por algum
+// motivo ele não estiver disponível, cai pro ffmpeg-static como reserva —
+// nesse caso os comandos de texto animado continuam falhando (a checagem
+// de boot logo abaixo avisa isso), mas !sticker simples, !play e !tomp3
+// continuam funcionando normalmente.
 let ffmpegPath = null;
 try {
-    ffmpegPath = require('ffmpeg-static');
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' });
+    ffmpegPath = 'ffmpeg';
 } catch (e) {
-    ffmpegPath = 'ffmpeg'; // Fallback para ffmpeg global do sistema
+    try {
+        ffmpegPath = require('ffmpeg-static');
+    } catch (e2) {
+        ffmpegPath = 'ffmpeg'; // nada deu certo — deixa o erro aparecer na hora de rodar
+    }
 }
 
 // ─── CONFIGURAÇÃO DAS FIGURINHAS ───
