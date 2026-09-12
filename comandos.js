@@ -397,7 +397,7 @@ const processarMensagem = async (sock, msg, db, salvarDB, sender) => {
         // JOGOS EM GRUPO (v2: forca, jogo da velha, 30 segundos, roleta russa social, enquete,
         // + ppt, verdadeoudesafio, emojicharada, quiz, sorteio, palavraencadeada, simon,
         // adivinhanumero, anagrama, digitacao, batalha naval — Entrega 12)
-        const cmdsJogos = ['forca', 'chutar', 'desistirforca', 'jogodavelha', 'aceitarvelha', 'jogar', 'desistirvelha', '30s', 'vermelha', 'azul', 'iniciar30s', 'pular', 'placar30s', 'encerrar30s', 'enquete', 'roletarussa', 'ppt', 'verdadeoudesafio', 'emojicharada', 'quiz', 'sorteio', 'participar', 'sortear', 'palavraencadeada', 'simon', 'adivinhanumero', 'anagrama', 'digitacao', 'batalhanaval', 'aceitarbatalha', 'atirar', 'desistirbatalha'];
+        const cmdsJogos = ['forca', 'chutar', 'desistirforca', 'jogodavelha', 'aceitarvelha', 'jogar', 'desistirvelha', '30s', 'vermelha', 'azul', 'iniciar30s', 'pular', 'placar30s', 'encerrar30s', 'enquete', 'roletarussa', 'ppt', 'verdadeoudesafio', 'emojicharada', 'quiz', 'sorteio', 'participar', 'sortear', 'palavraencadeada', 'simon', 'adivinhanumero', 'anagrama', 'digitacao', 'batalhanaval', 'aceitarbatalha', 'atirar', 'desistirbatalha', 'cancelarjogo'];
         if (cmdsJogos.includes(comandoUnico)) {
             const executarJogos = jogosModulo.jogosModulo || jogosModulo.default || jogosModulo;
             return await executarJogos(sock, msg, comandoUnico, argumentos, db, salvarDB);

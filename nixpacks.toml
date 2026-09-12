@@ -1,13 +1,28 @@
-# Instala o python3 no ambiente de build/execução do Railway.
+# v2 — corrige a versão anterior deste arquivo, que não funcionou.
 #
-# Por quê: o yt-dlp (baixado automaticamente pelo pacote youtube-dl-exec)
-# é um script Python — precisa de um "python3" disponível no sistema pra
-# rodar. O Railway detecta este projeto como Node.js puro e não instala
-# Python nenhum por padrão, então !play, !video, !tiktok e !instagram
-# falhavam sempre com: env: 'python3': No such file or directory
+# O que tinha de errado antes:
+#   aptPkgs = ["python3"]
+# Faltava o "..." no início do array. Sem ele, o Nixpacks pode não estender
+# corretamente a lista (a sintaxe documentada é sempre ["...", "pacote"]),
+# e pacotes via apt não têm garantia de sobreviver até o container final em
+# execução no Railway — só os pacotes Nix (nixPkgs) têm essa garantia,
+# porque viram parte do próprio ambiente do container, não só do passo de
+# build. Por isso trocamos para nixPkgs.
 #
-# Isso só ADICIONA o python3 ao setup do build — não troca nem remove nada
-# do que o Railway já detecta sozinho pro Node.js (nodejs, npm, etc.).
+# O que isso resolve:
+# - "python3": o yt-dlp (baixado pelo youtube-dl-exec) é um script Python e
+#   precisa de um python3 no sistema pra rodar. Sem isso, !play, !video,
+#   !tiktok e !instagram falhavam sempre com:
+#   env: 'python3': No such file or directory
+# - "ffmpeg": o binário empacotado pelo pacote npm ffmpeg-static ficou
+#   confirmado incompleto neste ambiente (não tem o filtro "drawtext"), o
+#   que quebrava !attp, !s-, !brat e !meme. Instalar o ffmpeg completo via
+#   Nix substitui esse binário incompleto (o código em modulos/midia.js já
+#   foi ajustado pra priorizar esse ffmpeg do sistema).
+#
+# O "..." no início do array é o que garante que isso é ADICIONADO ao que
+# o Railway já detecta sozinho pro Node.js (nodejs, npm, etc.) — sem ele,
+# a lista poderia ser SUBSTITUÍDA em vez de estendida.
 
 [phases.setup]
-aptPkgs = ["python3"]
+nixPkgs = ["...", "python3", "ffmpeg"]
