@@ -97,7 +97,35 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // ─── INICIALIZAÇÃO ATÔMICA E SEGURA DO BANCO DE DADOS ───
-const caminhoDB = path.join(__dirname, 'database.json');
+// database.json (golds, títulos, config) vivia só na pasta do projeto —
+// como o Railway recria o container do zero a cada deploy, tudo que só
+// existe ali (e não está commitado no Git) sumia a cada deploy novo.
+// Mesmo problema e mesma solução já usada pra sessão do WhatsApp
+// (auth_info, logo abaixo): se este serviço tiver um Volume do Railway
+// anexado, o database.json passa a viver dentro dele — sobrevive a
+// redeploys sozinho. Sem um Volume anexado, cai de volta pro
+// comportamento de sempre (reseta a cada deploy) — criar o Volume em
+// Settings → Volumes no Railway é o que falta pra isso parar de vez.
+function resolverCaminhoDB() {
+    const caminhoVolume = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    if (caminhoVolume) {
+        try {
+            const arquivoTeste = path.join(caminhoVolume, '.escrita_teste_db');
+            fs.writeFileSync(arquivoTeste, 'ok');
+            fs.unlinkSync(arquivoTeste);
+            const caminhoNoVolume = path.join(caminhoVolume, 'database.json');
+            console.log(`[DATABASE] Volume do Railway detectado e gravável — database.json será persistido em ${caminhoNoVolume} (sobrevive a redeploys).`);
+            return caminhoNoVolume;
+        } catch (e) {
+            console.error('[DATABASE] RAILWAY_VOLUME_MOUNT_PATH está definida mas não consegui gravar nela — caindo de volta pra pasta local (dados serão perdidos a cada deploy até isso ser corrigido).', e.message);
+        }
+    } else {
+        console.error('[DATABASE] Nenhum Volume do Railway anexado a este serviço — database.json vive só na pasta do projeto e será REINICIADO a cada novo deploy. Crie um Volume em Settings → Volumes no Railway pra corrigir isso de vez.');
+    }
+    return path.join(__dirname, 'database.json');
+}
+
+const caminhoDB = resolverCaminhoDB();
 
 const estruturaPadrao = {
     usuarios: {},
@@ -137,7 +165,10 @@ try {
 
 function salvarDB(dadosNovos) {
     try {
-        const caminhoTmp = path.join(__dirname, 'database.tmp');
+        // O temporário TEM que ficar na mesma pasta do destino final — se
+        // database.json estiver no Volume mas o temporário na pasta local do
+        // projeto, o rename atômico falha (são "dispositivos" diferentes).
+        const caminhoTmp = path.join(path.dirname(caminhoDB), 'database.tmp');
         fs.writeFileSync(caminhoTmp, JSON.stringify(dadosNovos, null, 4), 'utf-8');
         fs.renameSync(caminhoTmp, caminhoDB);
     } catch (error) {
