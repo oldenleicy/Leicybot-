@@ -107,6 +107,32 @@ function escaparParaDrawtext(texto) {
         .slice(0, 60);
 }
 
+// ── TAMANHO DE FONTE DINÂMICO ──────────────────────────────────────
+// Antes, !attp/!brat/!s-/!meme usavam um fontsize fixo — ficava pequeno
+// demais pra textos curtos (ex: uma palavra só) e não escalava com o
+// tamanho da imagem. Agora o tamanho se ajusta automaticamente.
+
+// Pra canvas quadrado fixo 512x512 (!attp e !brat): calcula em PIXELS,
+// maior quanto mais curto for o texto, sem deixar passar da largura
+// disponível (limitado entre 28px e 120px).
+function calcularFontSizeQuadrado(texto, ladoCanvas = 512) {
+    const larguraMaxima = ladoCanvas * 0.85; // 15% de margem nas laterais
+    const larguraMediaPorCaractere = 0.58; // estimativa pra fonte em negrito/condensada
+    const porLargura = Math.floor(larguraMaxima / (texto.length * larguraMediaPorCaractere));
+    return Math.max(28, Math.min(120, porLargura));
+}
+
+// Pra canvas de tamanho variável (!s- e !meme, que herdam a resolução da
+// foto/vídeo do usuário): retorna uma EXPRESSÃO do ffmpeg (não um número),
+// proporcional à altura real do quadro — assim o texto acompanha o
+// tamanho de qualquer imagem, em vez de ficar minúsculo em fotos grandes.
+function fontsizeProporcional(texto) {
+    if (texto.length <= 10) return 'h/9';
+    if (texto.length <= 20) return 'h/11';
+    if (texto.length <= 35) return 'h/14';
+    return 'h/18';
+}
+
 function rodarFfmpeg(argumentos) {
     return new Promise((resolve, reject) => {
         execFile(ffmpegPath, argumentos, (erro, stdout, stderr) => {
@@ -252,7 +278,7 @@ async function criarFigurinha(sock, msg, from, legenda) {
             fs.writeFileSync(entradaTmp, buffer);
 
             const textoSeguro = escaparParaDrawtext(legenda);
-            const filtro = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguro}':fontsize=42:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-text_h-20`;
+            const filtro = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguro}':fontsize=${fontsizeProporcional(textoSeguro)}:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h-text_h-20`;
 
             await rodarFfmpeg(['-y', '-i', entradaTmp, '-vf', filtro, saidaTmp]);
 
@@ -315,7 +341,7 @@ module.exports = async (sock, msg, comando, args) => {
             const attpTmp = path.join(__dirname, `attp_${Date.now()}_${Math.random().toString(36).slice(2)}.webm`);
             try {
                 const textoSeguroAttp = escaparParaDrawtext(busca);
-                const filtroAttp = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguroAttp}':fontsize=64:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2,hue=h=360*t/2.5:s=2`;
+                const filtroAttp = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguroAttp}':fontsize=${calcularFontSizeQuadrado(textoSeguroAttp)}:fontcolor=white:borderw=5:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2,hue=h=360*t/2.5:s=2`;
 
                 await rodarFfmpeg(['-y', '-f', 'lavfi', '-i', 'color=c=black@0.0:s=512x512:d=2.5:r=20', '-vf', filtroAttp, '-c:v', 'libvpx', '-pix_fmt', 'yuva420p', '-auto-alt-ref', '0', attpTmp]);
 
@@ -681,7 +707,7 @@ module.exports = async (sock, msg, comando, args) => {
                 const textoSeguroBrat = escaparParaDrawtext(busca);
                 // Verde-limão aproximado da capa do álbum Brat — sem animação de
                 // cor (diferente do !attp), é só o fundo sólido + texto preto.
-                const filtroBrat = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguroBrat}':fontsize=46:fontcolor=black:x=(w-text_w)/2:y=(h-text_h)/2`;
+                const filtroBrat = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguroBrat}':fontsize=${calcularFontSizeQuadrado(textoSeguroBrat)}:fontcolor=black:x=(w-text_w)/2:y=(h-text_h)/2`;
 
                 await rodarFfmpeg(['-y', '-f', 'lavfi', '-i', 'color=c=0x8ace00:s=512x512:d=1', '-vf', filtroBrat, '-frames:v', '1', bratTmp]);
 
@@ -720,8 +746,8 @@ module.exports = async (sock, msg, comando, args) => {
             try {
                 fs.writeFileSync(entradaMeme, bufferMemeOrigem);
                 const filtrosMeme = [];
-                if (textoCimaMeme) filtrosMeme.push(`drawtext=fontfile='${FONT_PATH}':text='${textoCimaMeme}':fontsize=46:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=20`);
-                if (textoBaixoMeme) filtrosMeme.push(`drawtext=fontfile='${FONT_PATH}':text='${textoBaixoMeme}':fontsize=46:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-text_h-20`);
+                if (textoCimaMeme) filtrosMeme.push(`drawtext=fontfile='${FONT_PATH}':text='${textoCimaMeme}':fontsize=${fontsizeProporcional(textoCimaMeme)}:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=20`);
+                if (textoBaixoMeme) filtrosMeme.push(`drawtext=fontfile='${FONT_PATH}':text='${textoBaixoMeme}':fontsize=${fontsizeProporcional(textoBaixoMeme)}:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h-text_h-20`);
 
                 await rodarFfmpeg(['-y', '-i', entradaMeme, '-vf', filtrosMeme.join(','), saidaMeme]);
                 const bufferMemeFinal = fs.readFileSync(saidaMeme);
