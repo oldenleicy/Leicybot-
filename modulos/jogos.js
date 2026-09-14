@@ -13,6 +13,8 @@
 // a Entrega 13 não mexe neste arquivo (só economia.js, diversao.js,
 // usuarioPadrao.js e comandos.js).
 const { resolverIdentidade, participanteBruto, obterAlvo } = require('./jidUtils');
+const { gerarDicaInicial, gerarDicaExtra } = require('./groqIA');
+const { BANCO_30S } = require('./banco30s');
 const criarUsuarioPadrao = require('./usuarioPadrao');
 const { enviarComMidiaOpcional } = require('./midiaOpcional');
 
@@ -324,20 +326,42 @@ function calcularRecompensaDigitacao(tempoMs) {
 // escreva mais nada. Adaptação pro chat de texto: como o bot não tem como
 // sussurrar a palavra só pro time da vez, ela aparece pra todo mundo no
 // grupo — mas só conta ponto quem responde certo E está no time da vez.
-// !pular troca a palavra atual sem pontuar. Cada time joga
-// RODADAS_POR_TIME_30S rodadas, alternando; no fim, quem tiver mais
-// pontos acumulados vence e cada membro do time vencedor leva um bônus.
-const BANCO_PALAVRAS_30S = [
-    'cachorro', 'elefante', 'guitarra', 'vulcao', 'chocolate', 'foguete',
-    'dinossauro', 'tsunami', 'labirinto', 'coroa', 'espada', 'castelo',
-    'girassol', 'tempestade', 'aranha', 'trombone', 'iceberg', 'pirata',
-    'vampiro', 'cometa', 'sereia', 'fantasma', 'bussola', 'caverna',
-    'tornado', 'unicornio', 'robo', 'zumbi', 'esqueleto', 'labareda'
-];
+// !pular troca a carta atual sem pontuar. Cada time joga
+// RODADAS_POR_TIME_30S_PADRAO rodadas por padrão (dá pra escolher outro
+// número com `!30s [número]`, de 1 até RODADAS_POR_TIME_30S_MAXIMO),
+// alternando; no fim, quem tiver mais pontos acumulados vence e cada
+// membro do time vencedor leva um bônus.
+//
+// v3: em vez de mostrar a palavra crua, o bot pede pra Groq (IA grátis)
+// descrever a palavra sem dizer o nome dela — a `dica` de cada carta
+// (em modulos/banco30s.js) é só a RESERVA, usada se a Groq não estiver
+// configurada ou falhar.
+//
+// v4: repetição de cartas em duas camadas —
+//  1) DENTRO da mesma partida: uma carta ACERTADA nunca mais volta; uma
+//     carta que NÃO foi acertada (pulada ou o tempo acabou) pode voltar a
+//     ser sorteada, mas no máximo LIMITE_APARICOES_CARTA_30S vezes ao
+//     todo (a original + repetições) — depois disso, some da partida.
+//  2) ENTRE partidas do MESMO grupo: guarda quais cartas já saíram nas
+//     partidas anteriores (historicoCartasPorGrupo) e prefere não repetir
+//     essas, pra um !30s novo logo depois do anterior não cair sempre nas
+//     mesmas cartas. Isso é só uma PREFERÊNCIA, não uma proibição — se as
+//     cartas "não vistas" acabarem, o histórico do grupo reabre sozinho.
+const LIMITE_APARICOES_CARTA_30S = 3; // 1 original + até 2 repetições, se não for acertada
 const DURACAO_RODADA_30S_MS = 30 * 1000;
-const RODADAS_POR_TIME_30S = 2;
+const RODADAS_POR_TIME_30S_PADRAO = 2;
+const RODADAS_POR_TIME_30S_MAXIMO = 50;
 const RECOMPENSA_POR_PALAVRA_30S = 8;
 const RECOMPENSA_VITORIA_30S = 40; // bônus por cabeça, só pra quem está no time vencedor
+
+const historicoCartasPorGrupo = new Map(); // groupJid -> Set<palavra>, sobrevive entre partidas
+
+function obterHistoricoGrupo30s(groupJid) {
+    if (!historicoCartasPorGrupo.has(groupJid)) {
+        historicoCartasPorGrupo.set(groupJid, new Set());
+    }
+    return historicoCartasPorGrupo.get(groupJid);
+}
 
 function emojiTime30s(time) {
     return time === 'vermelha' ? '🔴' : '🔵';
@@ -347,19 +371,54 @@ function timeContrario30s(time) {
     return time === 'vermelha' ? 'azul' : 'vermelha';
 }
 
-function sortearPalavra30s(usadas) {
-    let disponiveis = BANCO_PALAVRAS_30S.filter(p => !usadas.has(p));
+// Sorteia a próxima carta pra um jogo. `jogo.cartasEncerradas` bloqueia só
+// DENTRO desta partida (acertadas, ou que já bateram o limite de
+// repetição); o histórico do grupo é só preferência, entra em segundo
+// lugar.
+function sortearPalavra30s(jogo, groupJid) {
+    let disponiveis = BANCO_30S.filter(c => !jogo.cartasEncerradas.has(c.palavra));
     if (disponiveis.length === 0) {
-        usadas.clear();
-        disponiveis = BANCO_PALAVRAS_30S;
+        // Esgotou tudo nesta partida (só deve acontecer em partidas MUITO
+        // longas) — reabre geral pra não travar o jogo.
+        jogo.cartasEncerradas.clear();
+        disponiveis = BANCO_30S;
     }
-    return disponiveis[Math.floor(Math.random() * disponiveis.length)];
+
+    const historicoGrupo = obterHistoricoGrupo30s(groupJid);
+    const preferidas = disponiveis.filter(c => !historicoGrupo.has(c.palavra));
+    if (preferidas.length > 0) {
+        disponiveis = preferidas;
+    } else {
+        historicoGrupo.clear(); // o grupo já "viu" tudo que sobrou disponível — reabre
+    }
+
+    const carta = disponiveis[Math.floor(Math.random() * disponiveis.length)];
+    historicoGrupo.add(carta.palavra);
+    jogo.vezesQueApareceu.set(carta.palavra, (jogo.vezesQueApareceu.get(carta.palavra) || 0) + 1);
+    return carta;
 }
 
-function gerarOrdemRodadas30s() {
+// Chamada quando uma carta NÃO é acertada (pulada, ou o tempo acabou) —
+// só a exclui da partida se já bateu o limite de aparições.
+function marcarCartaNaoAcertada30s(jogo, palavra) {
+    const vezes = jogo.vezesQueApareceu.get(palavra) || 1;
+    if (vezes >= LIMITE_APARICOES_CARTA_30S) {
+        jogo.cartasEncerradas.add(palavra);
+    }
+}
+
+// Pede a dica de uma carta pra Groq; se não vier nada (IA não configurada,
+// timeout, erro, ou vazamento da palavra), usa a dica de reserva escrita
+// à mão. O jogo nunca fica sem dica por causa disso.
+async function obterDicaCarta(carta) {
+    const dicaIA = await gerarDicaInicial(carta.palavra, carta.categoria);
+    return dicaIA || carta.dica;
+}
+
+function gerarOrdemRodadas30s(rodadasPorTime) {
     const primeiroTime = Math.random() < 0.5 ? 'vermelha' : 'azul';
     const ordem = [];
-    for (let i = 0; i < RODADAS_POR_TIME_30S; i++) {
+    for (let i = 0; i < rodadasPorTime; i++) {
         ordem.push(primeiroTime, timeContrario30s(primeiroTime));
     }
     return ordem;
@@ -367,14 +426,18 @@ function gerarOrdemRodadas30s() {
 
 async function iniciarRodada30s(sock, from, jogo) {
     jogo.fase = 'rodada';
-    jogo.palavraAtual = sortearPalavra30s(jogo.palavrasUsadas);
+    jogo.palavraAtual = sortearPalavra30s(jogo, from);
     jogo.acertosRodada = 0;
+    jogo.errosSeguidosCarta = 0;
+    jogo.tentativasErradasCarta = [];
     jogo.inicioRodada = Date.now();
     tocarAtividade(jogo);
 
+    jogo.dicaAtual = await obterDicaCarta(jogo.palavraAtual);
+
     const time = jogo.timeDaVez;
     await sock.sendMessage(from, {
-        text: `⏱️ *RODADA DO TIME ${emojiTime30s(time)} ${time.toUpperCase()}!*\nVocês têm 30 segundos! Só vale resposta de quem está no time ${time} — mande a palavra certa direto no chat (sem !) pra pontuar, ou *!pular* pra trocar de palavra.\n\nPalavra:\n*${jogo.palavraAtual.toUpperCase()}*`
+        text: `⏱️ *RODADA DO TIME ${emojiTime30s(time)} ${time.toUpperCase()}!*\nVocês têm 30 segundos! Só vale resposta de quem está no time ${time} — mande o palpite direto no chat (sem !), ou *!pular* pra trocar de carta.\n\n💡 ${jogo.dicaAtual}`
     });
 
     jogo.timeoutRodada = setTimeout(() => {
@@ -387,6 +450,7 @@ async function finalizarRodada30s(sock, from) {
     if (!jogo || jogo.tipo !== '30s' || jogo.fase !== 'rodada') return;
 
     if (jogo.timeoutRodada) clearTimeout(jogo.timeoutRodada);
+    if (jogo.palavraAtual) marcarCartaNaoAcertada30s(jogo, jogo.palavraAtual.palavra);
     const timeQueJogou = jogo.timeDaVez;
     jogo.placar[timeQueJogou] += jogo.acertosRodada;
     jogo.indiceRodadaAtual += 1;
@@ -1065,13 +1129,22 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     return sock.sendMessage(from, { text: `❌ Já tem um jogo de *${NOME_JOGO[jogoExistente.tipo] || jogoExistente.tipo}* rolando neste grupo. Espere terminar!` }, { quoted: msg });
                 }
 
+                let rodadasPorTime = RODADAS_POR_TIME_30S_PADRAO;
+                if (args[0]) {
+                    const pedido = parseInt(args[0], 10);
+                    if (!Number.isNaN(pedido)) {
+                        rodadasPorTime = Math.max(1, Math.min(RODADAS_POR_TIME_30S_MAXIMO, pedido));
+                    }
+                }
+
                 const jogo = {
                     tipo: '30s', fase: 'lobby',
                     times: { vermelha: new Set(), azul: new Set() },
                     placar: { vermelha: 0, azul: 0 },
-                    ordemRodadas: gerarOrdemRodadas30s(), indiceRodadaAtual: 0,
-                    timeDaVez: null, palavraAtual: null, palavrasUsadas: new Set(),
-                    acertosRodada: 0, timeoutRodada: null,
+                    ordemRodadas: gerarOrdemRodadas30s(rodadasPorTime), indiceRodadaAtual: 0,
+                    timeDaVez: null, palavraAtual: null, dicaAtual: null,
+                    cartasEncerradas: new Set(), vezesQueApareceu: new Map(),
+                    acertosRodada: 0, errosSeguidosCarta: 0, tentativasErradasCarta: [], timeoutRodada: null,
                     db, salvarDB,
                     iniciadoPor: sender, ultimaAtividade: Date.now()
                 };
@@ -1079,7 +1152,7 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
                 jogosAtivos.set(from, jogo);
 
                 return sock.sendMessage(from, {
-                    text: `🎮 *30 SEGUNDOS!*\nEscolham seus times digitando *!vermelha* ou *!azul*. Quando os dois tiverem pelo menos 1 jogador, alguém digita *!iniciar30s* pra começar!`
+                    text: `🎮 *30 SEGUNDOS!*\n${rodadasPorTime} rodada(s) por time. Escolham seus times digitando *!vermelha* ou *!azul*. Quando os dois tiverem pelo menos 1 jogador, alguém digita *!iniciar30s* pra começar!`
                 }, { quoted: msg });
             }
 
@@ -1129,14 +1202,18 @@ const jogosModulo = async (sock, msg, comando, args, db, salvarDB) => {
                     return sock.sendMessage(from, { text: `❌ Não tem uma rodada de *30 Segundos* rolando agora.` }, { quoted: msg });
                 }
                 if (!jogo.times[jogo.timeDaVez].has(sender)) {
-                    return sock.sendMessage(from, { text: `❌ Só quem está no time da vez (${jogo.timeDaVez}) pode pular a palavra!` }, { quoted: msg });
+                    return sock.sendMessage(from, { text: `❌ Só quem está no time da vez (${jogo.timeDaVez}) pode pular a carta!` }, { quoted: msg });
                 }
 
-                jogo.palavrasUsadas.add(jogo.palavraAtual);
-                jogo.palavraAtual = sortearPalavra30s(jogo.palavrasUsadas);
+                marcarCartaNaoAcertada30s(jogo, jogo.palavraAtual.palavra);
+                jogo.palavraAtual = sortearPalavra30s(jogo, from);
+                jogo.errosSeguidosCarta = 0;
+                jogo.tentativasErradasCarta = [];
                 tocarAtividade(jogo);
 
-                return sock.sendMessage(from, { text: `⏭️ Pulou! Nova palavra:\n\n*${jogo.palavraAtual.toUpperCase()}*` }, { quoted: msg });
+                jogo.dicaAtual = await obterDicaCarta(jogo.palavraAtual);
+
+                return sock.sendMessage(from, { text: `⏭️ Pulou! Nova carta:\n\n💡 ${jogo.dicaAtual}` }, { quoted: msg });
             }
 
             // ── PLACAR ────────────────────────────────────────────────────
@@ -1501,20 +1578,43 @@ const verificarPalpite30s = async (sock, msg, db, salvarDB, from, sender, texto)
         if (!jogo.times[jogo.timeDaVez].has(sender)) return false; // só conta quem está no time da vez
 
         const normalizado = normalizar(texto);
-        if (!normalizado || normalizado !== normalizar(jogo.palavraAtual)) return false;
+        if (!normalizado || normalizado !== normalizar(jogo.palavraAtual.palavra)) {
+            // Errou — feedback na hora, de graça. A cada 3 erros seguidos na
+            // MESMA carta, pede uma dica mais específica pra Groq (reagindo
+            // às tentativas). Se a IA não responder a tempo, só o "não é
+            // isso" mesmo — sem travar a rodada esperando.
+            jogo.errosSeguidosCarta = (jogo.errosSeguidosCarta || 0) + 1;
+            jogo.tentativasErradasCarta = jogo.tentativasErradasCarta || [];
+            jogo.tentativasErradasCarta.push(texto);
 
-        const palavraAcertada = jogo.palavraAtual;
-        jogo.palavrasUsadas.add(palavraAcertada);
+            if (jogo.errosSeguidosCarta % 3 === 0) {
+                const dicaExtra = await gerarDicaExtra(jogo.palavraAtual.palavra, jogo.dicaAtual, jogo.tentativasErradasCarta);
+                if (dicaExtra) {
+                    jogo.dicaAtual = dicaExtra;
+                    await sock.sendMessage(from, { text: `❌ Não é isso! Mais uma dica: ${dicaExtra}` }, { quoted: msg });
+                    return true;
+                }
+            }
+
+            await sock.sendMessage(from, { text: `❌ Não é isso!` }, { quoted: msg });
+            return true;
+        }
+
+        const palavraAcertada = jogo.palavraAtual.palavra;
+        jogo.cartasEncerradas.add(palavraAcertada); // acertou — não repete mais nesta partida
         jogo.acertosRodada += 1;
+        jogo.errosSeguidosCarta = 0;
+        jogo.tentativasErradasCarta = [];
         tocarAtividade(jogo);
 
         const u = garantirUsuario(db, sender);
         u.golds = (u.golds || 0) + RECOMPENSA_POR_PALAVRA_30S;
         salvarDB(db);
 
-        jogo.palavraAtual = sortearPalavra30s(jogo.palavrasUsadas);
+        jogo.palavraAtual = sortearPalavra30s(jogo, from);
+        jogo.dicaAtual = await obterDicaCarta(jogo.palavraAtual);
         await sock.sendMessage(from, {
-            text: `✅ *${palavraAcertada}* certo! (+${RECOMPENSA_POR_PALAVRA_30S} 🪙) Próxima:\n\n*${jogo.palavraAtual.toUpperCase()}*`
+            text: `✅ *${palavraAcertada}* certo! (+${RECOMPENSA_POR_PALAVRA_30S} 🪙) Próxima:\n\n💡 ${jogo.dicaAtual}`
         }, { quoted: msg });
         return true;
     }
