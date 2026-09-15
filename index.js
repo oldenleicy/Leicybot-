@@ -196,6 +196,15 @@ let ultimoConteudoBackup = null; // v2: evita reenviar o mesmo backup quando nad
 let tentativasPareamentoSeguidas = 0;
 const MAX_TENTATIVAS_PAREAMENTO = 3;
 
+// Contador DIFERENTE do de cima: aquele conta falhas na CHAMADA de
+// requestPairingCode (erro de API). Este aqui conta quantos códigos foram
+// GERADOS COM SUCESSO e mostrados, mas ninguém completou o pareamento no
+// aparelho — ex: a conexão cai de novo antes de alguém digitar o código.
+// Sem isso, o bot ficaria gerando código atrás de código pra sempre (e
+// mandando vários pro dono) se ninguém estiver por perto pra parear.
+let codigosPareamentoSemUso = 0;
+const MAX_CODIGOS_PAREAMENTO_SEM_USO = 5;
+
 // Mesma ideia, mas pro caminho de reconexão "normal" (queda recuperável, sem
 // perder a sessão) — antes tentava de novo a cada 8s pra sempre, sem nunca
 // avisar se o motivo real persistisse por muito tempo.
@@ -360,8 +369,9 @@ async function iniciarBot() {
             try {
                 console.log(`[SISTEMA] Solicitando código de pareamento seguro para: ${MEU_NUMERO_WHATSAPP}`);
                 let codigo = await botSocket.requestPairingCode(MEU_NUMERO_WHATSAPP);
-                tentativasPareamentoSeguidas = 0; // sucesso — reseta o contador de falhas
-                statusConexao = `Código gerado: ${codigo}`;
+                tentativasPareamentoSeguidas = 0; // sucesso na CHAMADA — reseta o contador de falhas de API
+                codigosPareamentoSemUso++; // mas ainda ninguém completou o pareamento com este código
+                statusConexao = `Código gerado (${codigosPareamentoSemUso}/${MAX_CODIGOS_PAREAMENTO_SEM_USO}): ${codigo}`;
                 console.log('\n==================================================');
                 console.log(`🔑 SEU CÓDIGO DE EMPARELHAMENTO DO WHATSAPP: ${codigo}`);
                 console.log('==================================================\n');
@@ -397,8 +407,28 @@ async function iniciarBot() {
             console.log(`[CONEXÃO] Fechada com código: ${statusCode}`);
             console.log(`[CONEXÃO] Detalhe do erro real:`, lastDisconnect?.error?.message || lastDisconnect?.error || '(nenhum detalhe disponível)');
 
-            if ([401, 403, 405, 428, DisconnectReason.loggedOut].includes(statusCode)) {
-                console.log('[CONEXÃO] Motivo exige pareamento novo — limpando sessão local.');
+            // Limite de segurança: se já geramos vários códigos de pareamento
+            // seguidos e ninguém completou nenhum (a conexão nunca chegou a
+            // abrir), para de pedir — tanto por segurança (evitar bloqueio
+            // temporário do WhatsApp por excesso de tentativas) quanto porque,
+            // se ninguém está por perto pra digitar o código, insistir sozinho
+            // não resolve nada.
+            if (codigosPareamentoSemUso >= MAX_CODIGOS_PAREAMENTO_SEM_USO) {
+                statusConexao = `🚨 Já gerei ${codigosPareamentoSemUso} códigos de pareamento seguidos e nenhum foi usado. Parei de pedir por segurança — reinicie o bot manualmente quando estiver pronto pra parear de novo.`;
+                console.error('[SISTEMA] ' + statusConexao);
+                return; // não agenda mais nenhuma tentativa sozinho
+            }
+
+            // Só um logout DE VERDADE (401 / DisconnectReason.loggedOut) exige
+            // apagar a sessão e parear do zero — isso acontece quando a pessoa
+            // desconecta o aparelho pelo próprio WhatsApp. Os outros códigos
+            // (403, 405, 428...) são quedas de conexão comuns e RECUPERÁVEIS —
+            // tratá-los como logout (como era antes) fazia o bot destruir uma
+            // sessão perfeitamente boa à toa, e por isso ficava pedindo
+            // pareamento novo toda vez que a conexão soltava por qualquer
+            // instabilidade passageira.
+            if (statusCode === 401 || statusCode === DisconnectReason.loggedOut) {
+                console.log('[CONEXÃO] Logout confirmado — limpando sessão local e pareando do zero.');
                 tentativasReconexaoSeguidas = 0;
                 limparSessaoInvalida();
                 setTimeout(() => iniciarBot(), 5000);
@@ -417,6 +447,7 @@ async function iniciarBot() {
             statusConexao = "conectado";
             tentativasPareamentoSeguidas = 0;
             tentativasReconexaoSeguidas = 0;
+            codigosPareamentoSemUso = 0;
             console.log('🚀 [SUCESSO] Bot conectado 100% e operando sem falhas!');
         }
     });
