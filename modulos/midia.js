@@ -578,12 +578,16 @@ module.exports = async (sock, msg, comando, args) => {
             const temCookies = fs.existsSync(caminhoCookies);
 
             try {
-                // Cadeia de fallback de player_client (2.1): tenta Android primeiro
-                // (evita o bloqueio "Sign in to confirm you're not a bot" na maioria
-                // dos casos); se falhar, tenta iOS e por último TV embarcada — cada
-                // um finge ser um cliente diferente do YouTube e contorna bloqueios
-                // distintos.
-                const clientesFallback = ['android', 'ios', 'tv_embedded'];
+                // Cadeia de fallback de player_client (2.1 + 2.2): tenta Android
+                // primeiro (evita o bloqueio "Sign in to confirm you're not a bot"
+                // na maioria dos casos); se falhar, tenta iOS e por último TV
+                // embarcada — cada um finge ser um cliente diferente do YouTube e
+                // contorna bloqueios distintos. Se os três falharem com "formato
+                // não disponível" (comum pra vídeos específicos, o YouTube muda
+                // isso com frequência), a última tentativa é sem forçar nenhum
+                // disfarce — deixa o yt-dlp escolher o cliente sozinho, que é o
+                // caminho mais testado. `null` = não força extractorArgs.
+                const clientesFallback = ['android', 'ios', 'tv_embedded', null];
                 let baixouComSucesso = false;
                 let ultimoErroDownload = null;
 
@@ -597,20 +601,27 @@ module.exports = async (sock, msg, comando, args) => {
                             ffmpegLocation: ffmpegPath,
                             noPlaylist: true,
                             matchFilter: 'duration < 600', // protege o Railway grátis: bloqueia vídeos > 10min
-                            extractorArgs: `youtube:player_client=${cliente}`,
+                            ...(cliente ? { extractorArgs: `youtube:player_client=${cliente}` } : {}),
                             ...(temCookies ? { cookies: caminhoCookies } : {})
                         };
 
                         if (comando === 'play') {
-                            await youtubedl(alvo, { ...opcoesBase, extractAudio: true, audioFormat: 'mp3', audioQuality: 5 });
+                            // "bestaudio/best" é bem mais flexível que deixar o
+                            // yt-dlp usar o seletor padrão dele — aceita qualquer
+                            // stream de áudio disponível, em vez de exigir um
+                            // formato específico que pode não existir pra esse
+                            // vídeo/cliente.
+                            await youtubedl(alvo, { ...opcoesBase, format: 'bestaudio/best', extractAudio: true, audioFormat: 'mp3', audioQuality: 5 });
                         } else {
-                            await youtubedl(alvo, { ...opcoesBase, format: 'mp4[filesize<50M]/mp4' });
+                            // Mesma ideia pro vídeo: aceita qualquer container (não
+                            // só mp4) contanto que caiba no limite de tamanho.
+                            await youtubedl(alvo, { ...opcoesBase, format: 'best[filesize<50M]/best' });
                         }
                         baixouComSucesso = true;
                         break;
                     } catch (erroTentativa) {
                         ultimoErroDownload = erroTentativa;
-                        console.error(`[PLAY/VIDEO] Tentativa com player_client=${cliente} falhou:`, erroTentativa.message || erroTentativa);
+                        console.error(`[PLAY/VIDEO] Tentativa com player_client=${cliente || 'padrão (sem disfarce)'} falhou:`, erroTentativa.message || erroTentativa);
                     }
                 }
 
