@@ -15,6 +15,20 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
+// ─── RELATÓRIO DE ERROS POR WHATSAPP ───
+// Precisa vir logo no começo: embrulha o console.error pra que TODO erro do bot
+// (daqui e dos módulos) continue no log do servidor E também vá, em TXT, pro
+// privado do dono. O número vem de DONO_OFICIAL, definido mais abaixo — é lido
+// só na hora de enviar, quando já existe. Se o módulo falhar ao carregar, o bot
+// segue normal, só sem o relatório.
+let relatorioErros = null;
+try {
+    relatorioErros = require('./modulos/relatorioErros');
+    relatorioErros.iniciar({ obterDonoJid: () => DONO_OFICIAL });
+} catch (e) {
+    console.error('[SISTEMA] Relatório de erros por WhatsApp não carregou (o bot segue normal):', e.message);
+}
+
 // youtube-dl-exec é usado aqui só pra auto-atualizar o binário do yt-dlp no
 // boot (2.1) — os comandos de download em si continuam vivendo no
 // modulos/midia.js. Carregamento defensivo: se faltar, só desativa essa
@@ -397,6 +411,9 @@ async function iniciarBot() {
     botSocket.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
+            // Sem conexão não dá pra enviar o TXT: os erros ficam guardados e
+            // saem quando reconectar.
+            if (relatorioErros) relatorioErros.desconectar();
             if (timeoutPareamento) {
                 clearTimeout(timeoutPareamento);
                 timeoutPareamento = null;
@@ -449,6 +466,8 @@ async function iniciarBot() {
             tentativasReconexaoSeguidas = 0;
             codigosPareamentoSemUso = 0;
             console.log('🚀 [SUCESSO] Bot conectado 100% e operando sem falhas!');
+            // Conexão aberta: libera o envio dos relatórios de erro (e dos que ficaram guardados).
+            if (relatorioErros) relatorioErros.conectar(botSocket);
         }
     });
 
