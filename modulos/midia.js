@@ -14,6 +14,9 @@ try {
     console.error('[MIDIA] wa-sticker-formatter não carregou:', e.message);
 }
 
+// Figurinha de vídeo com tamanho garantido (WhatsApp só abre até 500 KB).
+const { gerarFigurinhaDeVideo } = require('./stickerVideo');
+
 let youtubedl = null;
 try {
     youtubedl = require('youtube-dl-exec');
@@ -287,13 +290,36 @@ async function criarFigurinha(sock, msg, from, legenda) {
             if (fs.existsSync(entradaTmp)) fs.unlinkSync(entradaTmp);
         }
 
-        const sticker = new Sticker(midiaFinal, {
-            pack: STICKER_PACK,
-            author: STICKER_AUTOR,
-            type: StickerTypes.CROPPED, // preenche o quadrado (corta o excesso) em vez de deixar bordas vazias
-            quality: 70
-        });
-        const bufferFigurinha = await sticker.toBuffer();
+        let bufferFigurinha;
+        if (tipoMsg === 'video') {
+            // Vídeo → figurinha animada: o WhatsApp só abre até 500 KB, então
+            // reduz e mede o tamanho até caber (ver modulos/stickerVideo.js).
+            const resultado = await gerarFigurinhaDeVideo({
+                Sticker,
+                StickerTypes,
+                bufferVideo: midiaFinal,
+                rodarFfmpeg,
+                pasta: __dirname,
+                pack: STICKER_PACK,
+                autor: STICKER_AUTOR
+            });
+            if (!resultado.coube) {
+                const resumo = resultado.tentativas
+                    .map(t => `${t.fps}fps/${t.segundos}s/q${t.qualidade}→${Math.round(t.bytes / 1024)}KB`)
+                    .join(', ');
+                console.warn(`[STICKER] Vídeo pesado demais mesmo depois de reduzir (limite 500 KB). Tentativas: ${resumo}`);
+                return sock.sendMessage(from, { text: "⚠️ Esse vídeo é pesado demais pra virar figurinha — o WhatsApp só aceita até 500 KB. Tenta um vídeo mais curto ou com menos movimento." }, { quoted: msg });
+            }
+            bufferFigurinha = resultado.buffer;
+        } else {
+            const sticker = new Sticker(midiaFinal, {
+                pack: STICKER_PACK,
+                author: STICKER_AUTOR,
+                type: StickerTypes.CROPPED, // preenche o quadrado (corta o excesso) em vez de deixar bordas vazias
+                quality: 70
+            });
+            bufferFigurinha = await sticker.toBuffer();
+        }
         await sock.sendMessage(from, { sticker: bufferFigurinha }, { quoted: msg });
     } catch (erro) {
         console.error('[STICKER] Erro:', erro.message || erro);
