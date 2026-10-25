@@ -563,82 +563,123 @@ module.exports = async (sock, msg, comando, args) => {
             await sock.sendMessage(from, { text: "⏳ Buscando e baixando, isso pode levar um tempinho..." }, { quoted: msg });
 
             const ehLink = /^https?:\/\//i.test(busca);
-            const alvo = ehLink ? busca : `ytsearch1:${busca}`;
+            const ehLinkYoutube = /^https?:\/\/((www|m|music)\.)?(youtube\.com|youtu\.be)\//i.test(busca);
             const sufixo = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+            const prefixo = `yt_${sufixo}`;
             // %(title)s no template de saída (além de nomear o arquivo direito)
             // também é o que permite comparar o título real baixado com o termo
             // pedido mais abaixo (busca tolerante, item 3).
-            const modeloSaida = path.join(__dirname, `yt_${sufixo}_%(title)s.%(ext)s`);
-            let caminhoCompleto = null;
+            const modeloSaida = path.join(__dirname, `${prefixo}_%(title)s.%(ext)s`);
 
-            // Cookies opcionais (2.1): se existir um cookies.txt exportado de uma
-            // conta real na raiz do projeto, usa ele; senão segue sem cookies,
-            // exatamente como já funcionava.
+            // Cookies opcionais: se existir um cookies.txt exportado de uma conta
+            // real na raiz do projeto, usa ele — mas só nas tentativas do
+            // YouTube (não faz sentido mandar isso pro SoundCloud).
             const caminhoCookies = path.join(__dirname, '..', 'cookies.txt');
-            const temCookies = fs.existsSync(caminhoCookies);
+            const cookiesYoutube = fs.existsSync(caminhoCookies) ? { cookies: caminhoCookies } : {};
+
+            // Clientes do YouTube que NÃO exigem PO Token (guia oficial do yt-dlp).
+            // Os antigos "android"/"ios" agora exigem PO Token e não aceitam
+            // cookies, e "tv_embedded" nem consta mais no guia — por isso saíram.
+            const CLIENTES_SEM_PO_TOKEN = 'youtube:player_client=android_vr,web_embedded,tv';
+
+            // Opções comuns a todas as tentativas. Sem "noWarnings" de propósito:
+            // os avisos do yt-dlp (ex: runtime de JavaScript não encontrado) são
+            // justamente o que ajuda a entender uma falha no log.
+            // jsRuntimes: o yt-dlp atual precisa de um runtime externo de
+            // JavaScript pro YouTube; o Node só vale se for versão 22 ou maior.
+            const opcoesBase = {
+                output: modeloSaida,
+                noCheckCertificates: true,
+                preferFreeFormats: true,
+                ffmpegLocation: ffmpegPath,
+                noPlaylist: true,
+                matchFilter: 'duration < 600', // protege o servidor grátis: bloqueia vídeos > 10min
+                jsRuntimes: 'node'
+            };
+
+            // Ordem das tentativas: YouTube normal → YouTube com clientes
+            // alternativos → SoundCloud (só pro !play por nome; link colado
+            // não tem equivalente em outra plataforma).
+            const tentativas = [];
+            if (ehLink) {
+                tentativas.push({ fonte: ehLinkYoutube ? 'YouTube' : 'link', rotulo: 'link', alvo: busca, extra: ehLinkYoutube ? cookiesYoutube : {} });
+                if (ehLinkYoutube) {
+                    tentativas.push({ fonte: 'YouTube', rotulo: 'link (clientes alternativos)', alvo: busca, extra: { extractorArgs: CLIENTES_SEM_PO_TOKEN, ...cookiesYoutube } });
+                }
+            } else {
+                tentativas.push({ fonte: 'YouTube', rotulo: 'YouTube', alvo: `ytsearch1:${busca}`, extra: cookiesYoutube });
+                tentativas.push({ fonte: 'YouTube', rotulo: 'YouTube (clientes alternativos)', alvo: `ytsearch1:${busca}`, extra: { extractorArgs: CLIENTES_SEM_PO_TOKEN, ...cookiesYoutube } });
+                if (comando === 'play') {
+                    tentativas.push({ fonte: 'SoundCloud', rotulo: 'SoundCloud', alvo: `scsearch1:${busca}`, extra: {} });
+                }
+            }
+
+            // Apaga qualquer arquivo temporário desta requisição (inclusive
+            // restos de uma tentativa que falhou no meio).
+            const limparTemporarios = () => {
+                try {
+                    for (const f of fs.readdirSync(__dirname)) {
+                        if (f.startsWith(prefixo)) {
+                            try { fs.unlinkSync(path.join(__dirname, f)); } catch (_) { /* segue */ }
+                        }
+                    }
+                } catch (_) { /* segue */ }
+            };
+            const encontrarArquivo = () => fs.readdirSync(__dirname).find(f => f.startsWith(prefixo) && !/\.(part|ytdl|temp)$/i.test(f));
+            // Pega o fim da mensagem de erro (onde o yt-dlp costuma pôr a linha ERROR).
+            const resumirErro = (erro) => String(erro?.stderr || erro?.message || erro || '').trim().slice(-800);
 
             try {
-                // Cadeia de fallback de player_client (2.1 + 2.2): tenta Android
-                // primeiro (evita o bloqueio "Sign in to confirm you're not a bot"
-                // na maioria dos casos); se falhar, tenta iOS e por último TV
-                // embarcada — cada um finge ser um cliente diferente do YouTube e
-                // contorna bloqueios distintos. Se os três falharem com "formato
-                // não disponível" (comum pra vídeos específicos, o YouTube muda
-                // isso com frequência), a última tentativa é sem forçar nenhum
-                // disfarce — deixa o yt-dlp escolher o cliente sozinho, que é o
-                // caminho mais testado. `null` = não força extractorArgs.
-                const clientesFallback = ['android', 'ios', 'tv_embedded', null];
-                let baixouComSucesso = false;
-                let ultimoErroDownload = null;
+                let arquivoGerado = null;
+                let fonteUsada = null;
+                const errosTentativas = [];
 
-                for (const cliente of clientesFallback) {
+                for (const tentativa of tentativas) {
+                    limparTemporarios();
                     try {
-                        const opcoesBase = {
-                            output: modeloSaida,
-                            noCheckCertificates: true,
-                            noWarnings: true,
-                            preferFreeFormats: true,
-                            ffmpegLocation: ffmpegPath,
-                            noPlaylist: true,
-                            matchFilter: 'duration < 600', // protege o Railway grátis: bloqueia vídeos > 10min
-                            ...(cliente ? { extractorArgs: `youtube:player_client=${cliente}` } : {}),
-                            ...(temCookies ? { cookies: caminhoCookies } : {})
-                        };
-
+                        const opcoes = { ...opcoesBase, ...tentativa.extra };
                         if (comando === 'play') {
-                            // "bestaudio/best" é bem mais flexível que deixar o
-                            // yt-dlp usar o seletor padrão dele — aceita qualquer
-                            // stream de áudio disponível, em vez de exigir um
-                            // formato específico que pode não existir pra esse
-                            // vídeo/cliente.
-                            await youtubedl(alvo, { ...opcoesBase, format: 'bestaudio/best', extractAudio: true, audioFormat: 'mp3', audioQuality: 5 });
+                            // "bestaudio/best" aceita qualquer stream de áudio
+                            // disponível, em vez de exigir um formato específico.
+                            await youtubedl(tentativa.alvo, { ...opcoes, format: 'bestaudio/best', extractAudio: true, audioFormat: 'mp3', audioQuality: 5 });
                         } else {
-                            // Mesma ideia pro vídeo: aceita qualquer container (não
-                            // só mp4) contanto que caiba no limite de tamanho.
-                            await youtubedl(alvo, { ...opcoesBase, format: 'best[filesize<50M]/best' });
+                            // Pro vídeo: aceita qualquer container contanto que
+                            // caiba no limite de tamanho.
+                            await youtubedl(tentativa.alvo, { ...opcoes, format: 'best[filesize<50M]/best' });
                         }
-                        baixouComSucesso = true;
-                        break;
+                        const achado = encontrarArquivo();
+                        if (achado) {
+                            arquivoGerado = achado;
+                            fonteUsada = tentativa.fonte;
+                            break;
+                        }
+                        // O yt-dlp pode terminar "com sucesso" sem baixar nada
+                        // (ex: vídeo barrado pelo filtro de duração). Conta como
+                        // falha pra seguir pra próxima tentativa.
+                        const semArquivo = 'terminou sem gerar arquivo (vídeo longo demais ou barrado pelo filtro)';
+                        errosTentativas.push(semArquivo);
+                        console.error(`[PLAY/VIDEO] Tentativa "${tentativa.rotulo}": ${semArquivo}`);
                     } catch (erroTentativa) {
-                        ultimoErroDownload = erroTentativa;
-                        console.error(`[PLAY/VIDEO] Tentativa com player_client=${cliente || 'padrão (sem disfarce)'} falhou:`, erroTentativa.message || erroTentativa);
+                        const resumo = resumirErro(erroTentativa);
+                        errosTentativas.push(resumo);
+                        console.error(`[PLAY/VIDEO] Tentativa "${tentativa.rotulo}" falhou: ${resumo}`);
                     }
                 }
 
-                if (!baixouComSucesso) {
-                    throw ultimoErroDownload || new Error('Todas as tentativas de download falharam.');
-                }
-
-                const pastaBase = __dirname;
-                const prefixo = `yt_${sufixo}`;
-                const arquivoGerado = fs.readdirSync(pastaBase).find(f => f.startsWith(prefixo));
-
                 if (!arquivoGerado) {
-                    return sock.sendMessage(from, { text: "❌ Não consegui baixar. Tente outro termo ou link." }, { quoted: msg });
+                    const bloqueioYoutube = /sign in|not a bot/i.test(errosTentativas.join(' | '));
+                    let textoFalha;
+                    if (bloqueioYoutube && comando === 'play' && !ehLink) {
+                        textoFalha = "❌ O YouTube bloqueou o download neste servidor e o SoundCloud não achou essa música. Tenta outro nome ou cola o link de uma faixa do SoundCloud.";
+                    } else if (bloqueioYoutube) {
+                        textoFalha = "❌ O YouTube bloqueou esse download por suspeitar de automação. Tenta de novo daqui a pouco — se continuar acontecendo sempre, me avisa.";
+                    } else {
+                        textoFalha = "❌ Falha ao baixar. Pode ser vídeo muito longo, restrito, ou o serviço está indisponível.";
+                    }
+                    return sock.sendMessage(from, { text: textoFalha }, { quoted: msg });
                 }
 
-                caminhoCompleto = path.join(pastaBase, arquivoGerado);
-                const bufferMidia = fs.readFileSync(caminhoCompleto);
+                const bufferMidia = fs.readFileSync(path.join(__dirname, arquivoGerado));
 
                 // Busca tolerante (3): compara o título real gravado no nome do
                 // arquivo (via %(title)s) com o termo pedido — só faz sentido em
@@ -646,7 +687,9 @@ module.exports = async (sock, msg, comando, args) => {
                 let avisoPlay = '';
                 if (!ehLink) {
                     const tituloReal = path.basename(arquivoGerado, path.extname(arquivoGerado)).replace(`${prefixo}_`, '');
-                    if (tituloReal && resultadoDivergeDoTermo(busca, tituloReal)) {
+                    if (fonteUsada === 'SoundCloud') {
+                        avisoPlay = `ℹ️ O YouTube não deixou baixar agora, então usei o SoundCloud.\nEncontrei: *${tituloReal}*`;
+                    } else if (tituloReal && resultadoDivergeDoTermo(busca, tituloReal)) {
                         avisoPlay = `${AVISO_RESULTADO_APROXIMADO}Encontrei: *${tituloReal}*`;
                     }
                 }
@@ -660,18 +703,12 @@ module.exports = async (sock, msg, comando, args) => {
                     await sock.sendMessage(from, { video: bufferMidia, caption: `🎬 ${busca}` }, { quoted: msg });
                 }
             } catch (e) {
-                console.error('[PLAY/VIDEO] Erro:', e.message || e);
-                const mensagemErro = (e.message || '').toLowerCase();
-                if (mensagemErro.includes('sign in') || mensagemErro.includes('bot')) {
-                    await sock.sendMessage(from, { text: "❌ O YouTube bloqueou esse download por suspeitar de automação. Tenta de novo daqui a pouco — se continuar acontecendo sempre, me avisa." }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(from, { text: "❌ Falha ao baixar. Pode ser vídeo muito longo, restrito, ou o serviço está indisponível." }, { quoted: msg });
-                }
+                console.error('[PLAY/VIDEO] Erro ao processar/enviar o arquivo:', e.message || e);
+                await sock.sendMessage(from, { text: "❌ Falha ao processar o arquivo. Tenta de novo ou escolhe outra música/vídeo." }, { quoted: msg });
             } finally {
                 // Roda mesmo se o sock.sendMessage falhar (ex: arquivo grande demais,
-                // conexão caiu no meio do envio) — antes o unlinkSync só rodava no
-                // caminho feliz, deixando lixo em disco a cada falha de envio.
-                if (caminhoCompleto && fs.existsSync(caminhoCompleto)) fs.unlinkSync(caminhoCompleto);
+                // conexão caiu no meio do envio) — limpa tudo desta requisição.
+                limparTemporarios();
             }
             break;
         }
