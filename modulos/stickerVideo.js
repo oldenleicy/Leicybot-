@@ -27,7 +27,9 @@ const DEGRAUS = [
  * @param {object} p
  * @param {Function} p.Sticker        classe Sticker do wa-sticker-formatter
  * @param {object}   p.StickerTypes   enum StickerTypes do wa-sticker-formatter
- * @param {Buffer}   p.bufferVideo    vídeo original (ou já com legenda)
+ * @param {Buffer}   p.bufferVideo    vídeo original
+ * @param {string}   [p.filtroExtra]  filtro do ffmpeg aplicado DEPOIS do corte em
+ *                                    quadrado (ex.: o drawtext da legenda do !s-)
  * @param {Function} p.rodarFfmpeg    (argumentos) => Promise — roda o ffmpeg
  * @param {string}   p.pasta          pasta pros arquivos temporários
  * @param {string}   p.pack           nome do pacote da figurinha
@@ -36,7 +38,7 @@ const DEGRAUS = [
  *   `tentativas` lista { fps, segundos, qualidade, bytes } de cada degrau tentado.
  */
 async function gerarFigurinhaDeVideo({
-    Sticker, StickerTypes, bufferVideo, rodarFfmpeg, pasta, pack, autor,
+    Sticker, StickerTypes, bufferVideo, filtroExtra = null, rodarFfmpeg, pasta, pack, autor,
     degraus = DEGRAUS, limiteBytes = LIMITE_BYTES
 }) {
     const sufixo = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -53,11 +55,15 @@ async function gerarFigurinhaDeVideo({
 
             // Quadrado 512x512 (preenche e corta o excesso, como o
             // StickerTypes.CROPPED), sem áudio, com menos quadros e menos segundos.
+            // O filtro extra (texto do !s-) vem por último: desenhar o texto
+            // antes do corte faria um vídeo "em pé" perder a legenda.
+            const filtro = `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=${degrau.fps}`
+                + (filtroExtra ? `,${filtroExtra}` : '');
             await rodarFfmpeg([
                 '-y', '-i', entrada,
                 '-t', String(degrau.segundos),
                 '-an',
-                '-vf', `scale=512:512:force_original_aspect_ratio=increase,crop=512:512,fps=${degrau.fps}`,
+                '-vf', filtro,
                 saida
             ]);
 
