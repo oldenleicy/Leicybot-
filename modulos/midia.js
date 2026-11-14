@@ -253,6 +253,10 @@ async function baixarMidiaParaAudio(msg) {
     return { tipo, buffer: bufferCompleto };
 }
 
+// Corta a mídia em quadrado 512x512 pelo centro (preenche e joga fora o
+// excesso), igual ao StickerTypes.CROPPED.
+const CORTE_QUADRADO_512 = 'scale=512:512:force_original_aspect_ratio=increase,crop=512:512';
+
 async function criarFigurinha(sock, msg, from, legenda) {
     if (!Sticker) {
         return sock.sendMessage(from, { text: "❌ O recurso de figurinhas está temporariamente indisponível (biblioteca não carregou no servidor)." }, { quoted: msg });
@@ -271,23 +275,37 @@ async function criarFigurinha(sock, msg, from, legenda) {
 
     let midiaFinal = buffer;
     let arquivoComLegenda = null;
+    // Filtro do texto do !s-. O texto é desenhado DEPOIS de cortar a mídia em
+    // quadrado 512x512, e não antes: a figurinha é sempre quadrada (CROPPED
+    // corta o excesso pelo centro) e o texto fica embaixo — se ele fosse
+    // desenhado na foto/vídeo inteiro, numa foto "em pé" (a maioria das de
+    // celular) o corte jogaria o texto fora e a figurinha sairia sem legenda.
+    let filtroLegenda = null;
 
     try {
         if (legenda) {
-            const extEntrada = tipoMsg === 'imagem' ? 'jpg' : 'mp4';
-            const sufixo = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-            const entradaTmp = path.join(__dirname, `sticker_in_${sufixo}.${extEntrada}`);
-            const saidaTmp = path.join(__dirname, `sticker_out_${sufixo}.${extEntrada}`);
-            fs.writeFileSync(entradaTmp, buffer);
-
             const textoSeguro = escaparParaDrawtext(legenda);
-            const filtro = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguro}':fontsize=${fontsizeProporcional(textoSeguro)}:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h-text_h-20`;
+            // calcularFontSizeQuadrado nunca desce de 28px e, com 44+ letras, o
+            // texto passaria da largura de 512px — nesse caso usa 18px.
+            const tamanhoFonte = textoSeguro.length > 43 ? 18 : calcularFontSizeQuadrado(textoSeguro, 512);
+            filtroLegenda = `drawtext=fontfile='${FONT_PATH}':text='${textoSeguro}':fontsize=${tamanhoFonte}:fontcolor=white:borderw=4:bordercolor=black:x=(w-text_w)/2:y=h-text_h-20`;
 
-            await rodarFfmpeg(['-y', '-i', entradaTmp, '-vf', filtro, saidaTmp]);
-
-            arquivoComLegenda = saidaTmp;
-            midiaFinal = fs.readFileSync(saidaTmp);
-            if (fs.existsSync(entradaTmp)) fs.unlinkSync(entradaTmp);
+            if (tipoMsg === 'imagem') {
+                // Imagem: corta em quadrado e desenha o texto no mesmo passo do ffmpeg.
+                const sufixo = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+                const entradaTmp = path.join(__dirname, `sticker_in_${sufixo}.jpg`);
+                const saidaTmp = path.join(__dirname, `sticker_out_${sufixo}.jpg`);
+                arquivoComLegenda = saidaTmp; // o finally apaga, mesmo se o ffmpeg falhar
+                try {
+                    fs.writeFileSync(entradaTmp, buffer);
+                    await rodarFfmpeg(['-y', '-i', entradaTmp, '-vf', `${CORTE_QUADRADO_512},${filtroLegenda}`, saidaTmp]);
+                    midiaFinal = fs.readFileSync(saidaTmp);
+                } finally {
+                    if (fs.existsSync(entradaTmp)) fs.unlinkSync(entradaTmp);
+                }
+            }
+            // Vídeo: o texto entra no próprio passo de redução do vídeo
+            // (gerarFigurinhaDeVideo, logo abaixo), também depois do corte.
         }
 
         let bufferFigurinha;
@@ -298,6 +316,7 @@ async function criarFigurinha(sock, msg, from, legenda) {
                 Sticker,
                 StickerTypes,
                 bufferVideo: midiaFinal,
+                filtroExtra: filtroLegenda, // texto do !s- (null no !sticker simples)
                 rodarFfmpeg,
                 pasta: __dirname,
                 pack: STICKER_PACK,
